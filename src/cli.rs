@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "vt",
     version,
+    arg_required_else_help = true,
     about = "Todos in your Markdown notes, from the terminal"
 )]
 pub struct Cli {
@@ -28,6 +29,31 @@ pub enum Command {
             help = "Show the todos of every note"
         )]
         all: bool,
+    },
+
+    #[command(
+        about = "Show every open todo with a due date, earliest first",
+        after_help = "Examples:\n  vt agenda\n  vt agenda garden"
+    )]
+    Agenda {
+        #[arg(help = "Only notes whose path matches this (typos allowed)")]
+        project: Option<String>,
+    },
+
+    #[command(
+        about = "Show what you checked off in a period",
+        after_help = "Periods: thisweek (default), lastweek, today, yesterday, thismonth, lastmonth, thisyear, lastyear (Dutch words work too)\n\nExamples:\n  vt recap\n  vt recap lastweek\n  vt recap thismonth --project garden"
+    )]
+    Recap {
+        #[arg(default_value = "thisweek", help = "Which period to look back on")]
+        period: String,
+
+        #[arg(
+            short,
+            long,
+            help = "Only notes whose path matches this (typos allowed)"
+        )]
+        project: Option<String>,
     },
 
     #[command(
@@ -84,27 +110,8 @@ pub enum Command {
     },
 
     #[command(
-        about = "Show every open todo with a due date, earliest first",
-        after_help = "Examples:\n  vt agenda\n  vt agenda garden"
+        about = "Print the project note for a Claude Code SessionStart hook",
+        after_help = "Reads the hook event from stdin and prints the matching project note as JSON. Prints nothing outside a repository or without VAULT, so it never blocks a session.\n\nIn ~/.claude/settings.json:\n  \"SessionStart\": [{ \"hooks\": [{ \"type\": \"command\", \"command\": \"vt hook\" }] }]"
     )]
-    Agenda {
-        #[arg(help = "Only notes whose path matches this (typos allowed)")]
-        project: Option<String>,
-    },
-
-    #[command(
-        about = "Show what you checked off in a period",
-        after_help = "Periods: thisweek (default), lastweek, today, yesterday, thismonth, lastmonth, thisyear, lastyear (Dutch words work too)\n\nExamples:\n  vt recap\n  vt recap lastweek\n  vt recap thismonth --project garden"
-    )]
-    Recap {
-        #[arg(default_value = "thisweek", help = "Which period to look back on")]
-        period: String,
-
-        #[arg(
-            short,
-            long,
-            help = "Only notes whose path matches this (typos allowed)"
-        )]
-        project: Option<String>,
-    },
+    Hook,
 }

@@ -45,16 +45,17 @@ pub fn repos_in(content: &str, home: &Path) -> Vec<PathBuf> {
 }
 
 pub fn folder_for(projects: &[Project], repository: &Path) -> Option<PathBuf> {
+    owner_of(projects, repository).map(Project::folder)
+}
+
+pub fn owner_of<'a>(projects: &'a [Project], repository: &Path) -> Option<&'a Project> {
     let repository = canonical(repository);
-    projects
-        .iter()
-        .find(|project| {
-            project
-                .repos
-                .iter()
-                .any(|repo| canonical(repo) == repository)
-        })
-        .map(Project::folder)
+    projects.iter().find(|project| {
+        project
+            .repos
+            .iter()
+            .any(|repo| canonical(repo) == repository)
+    })
 }
 
 fn expand_home(path: &str, home: &Path) -> PathBuf {

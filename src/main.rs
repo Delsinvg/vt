@@ -46,6 +46,18 @@ fn reader_stopped_listening(error: &(dyn Error + 'static)) -> bool {
 }
 
 fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
+    if let Command::Hook = cli.command {
+        let mut out = io::stdout().lock();
+        commands::session_start(
+            config::vault_root().ok(),
+            &config::home(),
+            io::stdin(),
+            &mut out,
+        )
+        .ok();
+        return Ok(());
+    }
+
     let vault = Vault::new(config::vault_root()?);
     let mut out = io::stdout().lock();
     let style = Style {
@@ -58,6 +70,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     let layout = config::layout();
 
     match cli.command {
+        Command::Hook => {}
         Command::Todo { project, all } => {
             let scope = todo_scope(&vault, project, all)?;
             commands::list_todos(&vault.todos()?, &scope, style, &mut out)?

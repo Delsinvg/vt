@@ -4,22 +4,36 @@ use std::process::Command;
 const GIT_DIRECTORY: &str = ".git";
 
 pub fn repository_root(directory: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(directory)
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let common_directory = PathBuf::from(String::from_utf8(output.stdout).ok()?.trim());
+    let common_directory = PathBuf::from(git(
+        directory,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?);
     if common_directory.ends_with(GIT_DIRECTORY) {
         common_directory.parent().map(Path::to_path_buf)
     } else {
         Some(common_directory)
     }
+}
+
+pub fn worktree_root(directory: &Path) -> Option<PathBuf> {
+    git(directory, &["rev-parse", "--show-toplevel"]).map(PathBuf::from)
+}
+
+pub fn current_branch(directory: &Path) -> Option<String> {
+    git(directory, &["branch", "--show-current"]).filter(|branch| !branch.is_empty())
+}
+
+fn git(directory: &Path, arguments: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(directory)
+        .args(arguments)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8(output.stdout).ok()?.trim().to_string())
 }
 
 #[cfg(test)]
@@ -28,7 +42,7 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn git(directory: &Path, arguments: &[&str]) {
+    fn run_git(directory: &Path, arguments: &[&str]) {
         let status = Command::new("git")
             .arg("-C")
             .arg(directory)
@@ -42,8 +56,8 @@ mod tests {
 
     fn repository() -> TempDir {
         let directory = TempDir::new().unwrap();
-        git(directory.path(), &["init", "--quiet"]);
-        git(
+        run_git(directory.path(), &["init", "--quiet"]);
+        run_git(
             directory.path(),
             &["commit", "--quiet", "--allow-empty", "-m", "start"],
         );
@@ -67,7 +81,7 @@ mod tests {
         let repo = repository();
         let worktrees = TempDir::new().unwrap();
         let worktree = worktrees.path().join("feature");
-        git(
+        run_git(
             repo.path(),
             &[
                 "worktree",
@@ -82,6 +96,30 @@ mod tests {
         assert_eq!(
             repository_root(&worktree).map(|root| fs::canonicalize(root).unwrap()),
             Some(fs::canonicalize(repo.path()).unwrap())
+        );
+    }
+
+    #[test]
+    fn knows_the_branch_and_the_worktree_folder() {
+        let repo = repository();
+        let worktrees = TempDir::new().unwrap();
+        let worktree = worktrees.path().join("feature");
+        run_git(
+            repo.path(),
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                worktree.to_str().unwrap(),
+                "-b",
+                "feature",
+            ],
+        );
+
+        assert_eq!(current_branch(&worktree), Some("feature".to_string()));
+        assert_eq!(
+            worktree_root(&worktree).map(|root| fs::canonicalize(root).unwrap()),
+            Some(fs::canonicalize(&worktree).unwrap())
         );
     }
 
