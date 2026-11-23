@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use walkdir::{DirEntry, WalkDir};
 
+use crate::project::{Project, repos_in};
 use crate::todo::Todo;
 
 const CHANGED_SINCE_READ: &str = "the note changed while vt was running; run the command again";
@@ -33,6 +34,20 @@ impl Vault {
         }
 
         Ok(todos)
+    }
+
+    pub fn projects(&self, home: &Path) -> io::Result<Vec<Project>> {
+        let mut projects = Vec::new();
+
+        for note in self.notes()? {
+            let content = fs::read_to_string(self.root.join(&note))?;
+            let repos = repos_in(&content, home);
+            if !repos.is_empty() {
+                projects.push(Project { note, repos });
+            }
+        }
+
+        Ok(projects)
     }
 
     pub fn append_line(&self, note: &Path, line: &str) -> io::Result<()> {
@@ -176,6 +191,29 @@ mod tests {
         ]);
 
         assert!(Vault::new(directory.path()).todos().unwrap().is_empty());
+    }
+
+    #[test]
+    fn lists_only_notes_that_name_repositories_as_projects() {
+        let directory = vault_with(&[
+            (
+                "Projects/Garden/Garden.md",
+                "---\nrepos:\n  - ~/code/garden\n---\n# Garden\n",
+            ),
+            ("Inbox.md", "# Inbox\n"),
+        ]);
+
+        let projects = Vault::new(directory.path())
+            .projects(Path::new("/home/someone"))
+            .unwrap();
+
+        assert_eq!(
+            projects,
+            vec![Project {
+                note: PathBuf::from("Projects/Garden/Garden.md"),
+                repos: vec![PathBuf::from("/home/someone/code/garden")],
+            }]
+        );
     }
 
     #[test]

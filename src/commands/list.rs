@@ -1,4 +1,5 @@
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 use super::open_todos;
 use crate::output::Style;
@@ -6,9 +7,15 @@ use crate::select;
 use crate::todo::Todo;
 use crate::vault::VaultTodo;
 
+pub enum Scope {
+    All,
+    Matching(String),
+    Folder(PathBuf),
+}
+
 pub fn list_todos(
     todos: &[VaultTodo],
-    project: Option<&str>,
+    scope: &Scope,
     style: Style,
     out: &mut impl Write,
 ) -> io::Result<()> {
@@ -16,15 +23,26 @@ pub fn list_todos(
     let note_names = unique_note_names(&open);
     let candidates: Vec<&str> = note_names.iter().map(String::as_str).collect();
 
-    let shown = match project {
-        Some(query) => select::matching(&candidates, query),
-        None => candidates,
+    let shown = match scope {
+        Scope::All => candidates,
+        Scope::Matching(query) => select::matching(&candidates, query),
+        Scope::Folder(folder) => candidates
+            .into_iter()
+            .filter(|note| PathBuf::from(note).starts_with(folder))
+            .collect(),
     };
 
     if shown.is_empty() {
-        return match project {
-            Some(query) => writeln!(out, "No open todos in a note matching '{query}'"),
-            None => writeln!(out, "No open todos"),
+        return match scope {
+            Scope::All => writeln!(out, "No open todos"),
+            Scope::Matching(query) => {
+                writeln!(out, "No open todos in a note matching '{query}'")
+            }
+            Scope::Folder(folder) => writeln!(
+                out,
+                "No open todos in {}; 'vt todo --all' shows everything",
+                folder.display()
+            ),
         };
     }
 
@@ -68,7 +86,6 @@ fn describe(todo: &Todo, style: Style) -> String {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
-    use std::path::PathBuf;
 
     const PLAIN: Style = Style { terminal: false };
 
@@ -85,9 +102,9 @@ mod tests {
         }
     }
 
-    fn render(todos: &[VaultTodo], project: Option<&str>) -> String {
+    fn render(todos: &[VaultTodo], scope: Scope) -> String {
         let mut out = Vec::new();
-        list_todos(todos, project, PLAIN, &mut out).unwrap();
+        list_todos(todos, &scope, PLAIN, &mut out).unwrap();
         String::from_utf8(out).unwrap()
     }
 
@@ -103,7 +120,7 @@ mod tests {
     #[test]
     fn groups_open_todos_per_note() {
         assert_eq!(
-            render(&sample(), None),
+            render(&sample(), Scope::All),
             "Inbox.md\n\
              - [ ] Call the plumber\n\
              \n\
@@ -118,7 +135,7 @@ mod tests {
     #[test]
     fn shows_only_the_matching_project() {
         assert_eq!(
-            render(&sample(), Some("kitchn")),
+            render(&sample(), Scope::Matching("kitchn".to_string())),
             "Projects/Kitchen/Kitchen.md\n- [ ] Fix the tap\n"
         );
     }
@@ -129,7 +146,7 @@ mod tests {
         todos[0].todo.due = NaiveDate::from_ymd_opt(2026, 12, 1);
 
         assert_eq!(
-            render(&todos, None),
+            render(&todos, Scope::All),
             "Inbox.md\n- [ ] Call the plumber 📅 2026-12-01\n"
         );
     }
@@ -137,7 +154,7 @@ mod tests {
     #[test]
     fn says_so_when_no_note_matches() {
         assert_eq!(
-            render(&sample(), Some("zzz")),
+            render(&sample(), Scope::Matching("zzz".to_string())),
             "No open todos in a note matching 'zzz'\n"
         );
     }
@@ -146,6 +163,29 @@ mod tests {
     fn says_so_when_everything_is_done() {
         let todos = vec![found("Inbox.md", "Buy seeds", true)];
 
-        assert_eq!(render(&todos, None), "No open todos\n");
+        assert_eq!(render(&todos, Scope::All), "No open todos\n");
+    }
+
+    #[test]
+    fn a_folder_shows_every_note_inside_it() {
+        let mut todos = sample();
+        todos.push(found("Projects/Garden/Notes.md", "Ask about tiles", false));
+
+        assert_eq!(
+            render(&todos, Scope::Folder(PathBuf::from("Projects/Garden"))),
+            "Projects/Garden/Garden.md\n\
+             - [ ] Water the plants\n\
+             \n\
+             Projects/Garden/Notes.md\n\
+             - [ ] Ask about tiles\n"
+        );
+    }
+
+    #[test]
+    fn an_empty_folder_points_to_all() {
+        assert_eq!(
+            render(&sample(), Scope::Folder(PathBuf::from("Projects/Attic"))),
+            "No open todos in Projects/Attic; 'vt todo --all' shows everything\n"
+        );
     }
 }

@@ -5,7 +5,7 @@ mod list;
 
 pub use add::add_to_inbox;
 pub use change::{set_due, split_date, tick};
-pub use list::list_todos;
+pub use list::{Scope, list_todos};
 
 use crate::output::Style;
 use crate::vault::VaultTodo;

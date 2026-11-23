@@ -13,10 +13,21 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    #[command(about = "Show open todos, grouped per note")]
+    #[command(
+        about = "Show open todos, grouped per note",
+        after_help = "Inside a repository that a project note lists under 'repos:', only that project's todos are shown.\n\nExamples:\n  vt todo            the current project, or everything outside a project\n  vt todo garden     notes whose path matches 'garden'\n  vt todo --all      everything"
+    )]
     Todo {
         #[arg(help = "Only notes whose path matches this (typos allowed)")]
         project: Option<String>,
+
+        #[arg(
+            short,
+            long,
+            conflicts_with = "project",
+            help = "Show the todos of every note"
+        )]
+        all: bool,
     },
 
     #[command(

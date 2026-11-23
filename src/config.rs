@@ -8,6 +8,10 @@ const VAULT_VARIABLE: &str = "VAULT";
 const MISSING_VAULT: &str =
     "VAULT is not set. Point it to your notes, e.g. export VAULT=\"$HOME/Documents/notes\"";
 
+pub fn home() -> PathBuf {
+    env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+}
+
 pub fn vault_root() -> io::Result<PathBuf> {
     env::var_os(VAULT_VARIABLE)
         .map(PathBuf::from)
