@@ -4,7 +4,7 @@ use chrono::{Datelike, Days, Months, NaiveDate, Weekday};
 
 mod vocabulary;
 
-use vocabulary::{Keyword, keyword, means_no_date};
+use vocabulary::{Keyword, PeriodWord, keyword, means_no_date, period};
 
 const WORKWEEK_END: Weekday = Weekday::Fri;
 
@@ -38,6 +38,63 @@ pub fn parse_due(input: &str, today: NaiveDate) -> Result<Option<NaiveDate>, Unk
         return Ok(None);
     }
     parse_date(input, today).map(Some)
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Period {
+    pub from: NaiveDate,
+    pub until: NaiveDate,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct UnknownPeriod(pub String);
+
+impl fmt::Display for UnknownPeriod {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "unknown period '{}': use today, yesterday, thisweek, lastweek, thismonth, lastmonth or lastyear (Dutch words work too)",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnknownPeriod {}
+
+pub fn parse_period(input: &str, today: NaiveDate) -> Result<Period, UnknownPeriod> {
+    let unknown = || UnknownPeriod(input.to_string());
+    let word = period(&normalize(input)).ok_or_else(unknown)?;
+    let monday = today - Days::new(u64::from(today.weekday().num_days_from_monday()));
+
+    let (from, until) = match word {
+        PeriodWord::Today => (today, today),
+        PeriodWord::Yesterday => {
+            let yesterday = today.pred_opt().ok_or_else(unknown)?;
+            (yesterday, yesterday)
+        }
+        PeriodWord::ThisWeek => (monday, today),
+        PeriodWord::LastWeek => (monday - Days::new(7), monday - Days::new(1)),
+        PeriodWord::ThisMonth => (today.with_day(1).ok_or_else(unknown)?, today),
+        PeriodWord::LastMonth => {
+            let end = today.with_day(1).and_then(|first| first.pred_opt());
+            let start = end.and_then(|end| end.with_day(1));
+            (start.ok_or_else(unknown)?, end.ok_or_else(unknown)?)
+        }
+        PeriodWord::LastYear => {
+            let year = today.year() - 1;
+            (
+                NaiveDate::from_ymd_opt(year, 1, 1).ok_or_else(unknown)?,
+                NaiveDate::from_ymd_opt(year, 12, 31).ok_or_else(unknown)?,
+            )
+        }
+    };
+    Ok(Period { from, until })
+}
+
+impl Period {
+    pub fn contains(&self, date: NaiveDate) -> bool {
+        (self.from..=self.until).contains(&date)
+    }
 }
 
 fn normalize(input: &str) -> String {
@@ -181,6 +238,79 @@ mod tests {
         assert_eq!(parse_due("none", friday), Ok(None));
         assert_eq!(parse_due("geen", friday), Ok(None));
         assert_eq!(parse_due("tomorrow", friday), Ok(Some(date(2026, 11, 21))));
+    }
+
+    fn period_on_friday(input: &str) -> Result<(NaiveDate, NaiveDate), UnknownPeriod> {
+        parse_period(input, date(FRIDAY.0, FRIDAY.1, FRIDAY.2))
+            .map(|period| (period.from, period.until))
+    }
+
+    #[test]
+    fn periods_work_in_both_languages() {
+        let monday = date(2026, 11, 16);
+        let friday = date(2026, 11, 20);
+
+        assert_eq!(period_on_friday("thisweek"), Ok((monday, friday)));
+        assert_eq!(period_on_friday("dezeweek"), Ok((monday, friday)));
+        assert_eq!(period_on_friday("today"), Ok((friday, friday)));
+        assert_eq!(
+            period_on_friday("gisteren"),
+            Ok((date(2026, 11, 19), date(2026, 11, 19)))
+        );
+    }
+
+    #[test]
+    fn last_week_runs_from_monday_to_sunday() {
+        assert_eq!(
+            period_on_friday("vorigeweek"),
+            Ok((date(2026, 11, 9), date(2026, 11, 15)))
+        );
+    }
+
+    #[test]
+    fn this_month_starts_on_the_first() {
+        assert_eq!(
+            period_on_friday("thismonth"),
+            Ok((date(2026, 11, 1), date(2026, 11, 20)))
+        );
+    }
+
+    #[test]
+    fn last_month_is_the_whole_previous_month() {
+        assert_eq!(
+            period_on_friday("lastmonth"),
+            Ok((date(2026, 10, 1), date(2026, 10, 31)))
+        );
+        assert_eq!(
+            period_on_friday("vorige maand"),
+            Ok((date(2026, 10, 1), date(2026, 10, 31)))
+        );
+    }
+
+    #[test]
+    fn last_month_in_january_is_last_years_december() {
+        assert_eq!(
+            parse_period("vorigemaand", date(2027, 1, 15))
+                .map(|period| (period.from, period.until)),
+            Ok((date(2026, 12, 1), date(2026, 12, 31)))
+        );
+    }
+
+    #[test]
+    fn last_year_is_the_whole_previous_year() {
+        assert_eq!(
+            period_on_friday("lastyear"),
+            Ok((date(2025, 1, 1), date(2025, 12, 31)))
+        );
+        assert_eq!(
+            period_on_friday("vorig-jaar"),
+            Ok((date(2025, 1, 1), date(2025, 12, 31)))
+        );
+    }
+
+    #[test]
+    fn an_unknown_period_is_an_error() {
+        assert!(period_on_friday("nextweek").is_err());
     }
 
     #[test]

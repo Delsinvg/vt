@@ -68,4 +68,29 @@ pub enum Command {
         )]
         words: Vec<String>,
     },
+
+    #[command(
+        about = "Show every open todo with a due date, earliest first",
+        after_help = "Examples:\n  vt agenda\n  vt agenda garden"
+    )]
+    Agenda {
+        #[arg(help = "Only notes whose path matches this (typos allowed)")]
+        project: Option<String>,
+    },
+
+    #[command(
+        about = "Show what you checked off in a period",
+        after_help = "Periods: thisweek (default), lastweek, today, yesterday, thismonth, lastmonth, lastyear (Dutch words work too)\n\nExamples:\n  vt recap\n  vt recap lastweek\n  vt recap thismonth --project garden"
+    )]
+    Recap {
+        #[arg(default_value = "thisweek", help = "Which period to look back on")]
+        period: String,
+
+        #[arg(
+            short,
+            long,
+            help = "Only notes whose path matches this (typos allowed)"
+        )]
+        project: Option<String>,
+    },
 }

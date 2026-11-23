@@ -10,6 +10,9 @@ static MARKDOWN_LINK: LazyLock<Regex> =
 const RESET: &str = "\x1b[0m";
 const MAGENTA: &str = "\x1b[35m";
 const BOLD_RED: &str = "\x1b[1;31m";
+const RED: &str = "\x1b[31m";
+const YELLOW: &str = "\x1b[33m";
+const DIM: &str = "\x1b[2m";
 
 #[derive(Clone, Copy)]
 pub struct Style {
@@ -17,6 +20,18 @@ pub struct Style {
 }
 
 impl Style {
+    pub fn overdue(&self, text: &str) -> String {
+        self.paint(RED, text)
+    }
+
+    pub fn due_today(&self, text: &str) -> String {
+        self.paint(YELLOW, text)
+    }
+
+    pub fn dim(&self, text: &str) -> String {
+        self.paint(DIM, text)
+    }
+
     pub fn heading(&self, text: &str) -> String {
         self.paint(MAGENTA, text)
     }

@@ -91,6 +91,19 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 &mut out,
             )?
         }
+        Command::Agenda { project } => {
+            commands::agenda(&vault.todos()?, project.as_deref(), today, style, &mut out)?
+        }
+        Command::Recap { period, project } => {
+            let period = dates::parse_period(&period, today)?;
+            commands::recap(
+                &vault.todos()?,
+                &period,
+                project.as_deref(),
+                style,
+                &mut out,
+            )?
+        }
     }
 
     Ok(())

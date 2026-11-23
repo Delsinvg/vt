@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use super::open_todos;
+use super::{note_name, open_todos};
 use crate::output::Style;
 use crate::select;
 use crate::todo::Todo;
@@ -68,10 +68,6 @@ fn unique_note_names(todos: &[&VaultTodo]) -> Vec<String> {
     let mut names: Vec<String> = todos.iter().map(|found| note_name(found)).collect();
     names.dedup();
     names
-}
-
-fn note_name(found: &VaultTodo) -> String {
-    found.note.to_string_lossy().into_owned()
 }
 
 fn describe(todo: &Todo, style: Style) -> String {
