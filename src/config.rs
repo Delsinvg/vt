@@ -2,6 +2,8 @@ use std::env;
 use std::io;
 use std::path::PathBuf;
 
+pub const INBOX_NOTE: &str = "Inbox.md";
+
 const VAULT_VARIABLE: &str = "VAULT";
 const MISSING_VAULT: &str =
     "VAULT is not set. Point it to your notes, e.g. export VAULT=\"$HOME/Documents/notes\"";

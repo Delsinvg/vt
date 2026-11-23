@@ -1,5 +1,5 @@
-use std::fs;
-use std::io;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use walkdir::{DirEntry, WalkDir};
@@ -31,6 +31,23 @@ impl Vault {
         }
 
         Ok(todos)
+    }
+
+    pub fn append_line(&self, note: &Path, line: &str) -> io::Result<()> {
+        let path = self.root.join(note);
+        let existing = match fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(error) => return Err(error),
+        };
+        let separator = if existing.is_empty() || existing.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
+
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+        writeln!(file, "{separator}{line}")
     }
 
     fn notes(&self) -> io::Result<Vec<PathBuf>> {
@@ -143,5 +160,39 @@ mod tests {
     #[test]
     fn a_missing_vault_is_an_error() {
         assert!(Vault::new("/does/not/exist").todos().is_err());
+    }
+
+    fn appended(existing: Option<&str>) -> String {
+        let directory = TempDir::new().unwrap();
+        let note = Path::new("Inbox.md");
+        if let Some(content) = existing {
+            fs::write(directory.path().join(note), content).unwrap();
+        }
+
+        Vault::new(directory.path())
+            .append_line(note, "- [ ] Call the plumber")
+            .unwrap();
+        fs::read_to_string(directory.path().join(note)).unwrap()
+    }
+
+    #[test]
+    fn appends_a_line_below_the_existing_content() {
+        assert_eq!(
+            appended(Some("# Inbox\n\n")),
+            "# Inbox\n\n- [ ] Call the plumber\n"
+        );
+    }
+
+    #[test]
+    fn starts_a_new_line_when_the_note_does_not_end_with_one() {
+        assert_eq!(
+            appended(Some("# Inbox\n- [ ] Buy milk")),
+            "# Inbox\n- [ ] Buy milk\n- [ ] Call the plumber\n"
+        );
+    }
+
+    #[test]
+    fn creates_the_note_when_it_does_not_exist() {
+        assert_eq!(appended(None), "- [ ] Call the plumber\n");
     }
 }

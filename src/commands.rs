@@ -1,9 +1,32 @@
+use std::error::Error;
 use std::io::{self, Write};
+use std::path::Path;
 
+use chrono::NaiveDate;
+
+use crate::inbox;
 use crate::output::Style;
 use crate::select;
 use crate::todo::Todo;
-use crate::vault::VaultTodo;
+use crate::vault::{Vault, VaultTodo};
+
+pub fn add_to_inbox(
+    vault: &Vault,
+    inbox_note: &Path,
+    words: &[String],
+    today: NaiveDate,
+    out: &mut impl Write,
+) -> Result<(), Box<dyn Error>> {
+    let todo = inbox::compose(words, today)?;
+    vault.append_line(inbox_note, &todo.line())?;
+
+    let text = Style { terminal: false }.links(&todo.text);
+    match todo.due {
+        Some(due) => writeln!(out, "Added to inbox: {text} (due {due})")?,
+        None => writeln!(out, "Added to inbox: {text}")?,
+    }
+    Ok(())
+}
 
 pub fn list_todos(
     todos: &[VaultTodo],
