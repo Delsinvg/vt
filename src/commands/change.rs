@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 
 use super::choose::choose;
 use super::{open_todos, plain};
-use crate::dates::parse_due;
+use crate::dates::{Calendar, parse_due};
 use crate::picker::Prompt;
 use crate::todo::Todo;
 use crate::vault::{Vault, VaultTodo};
@@ -43,7 +43,7 @@ pub fn set_due(
     todos: &[VaultTodo],
     query: &str,
     when: Option<&str>,
-    today: NaiveDate,
+    calendar: &Calendar,
     prompt: &mut impl Prompt,
     out: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
@@ -62,7 +62,7 @@ pub fn set_due(
         return Ok(());
     };
 
-    let due = parse_due(answer.trim_start_matches('@'), today)?;
+    let due = parse_due(answer.trim_start_matches('@'), calendar)?;
     for found in chosen {
         let rescheduled = Todo {
             due,
@@ -143,7 +143,7 @@ mod tests {
                 &todos,
                 query,
                 when,
-                friday(),
+                &Calendar::on(friday()),
                 prompt,
                 &mut self.output,
             )

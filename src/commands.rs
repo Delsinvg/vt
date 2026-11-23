@@ -10,7 +10,7 @@ mod relocate;
 pub use add::add_todo;
 pub use agenda::agenda;
 pub use change::{set_due, split_date, tick};
-pub use hook::session_start;
+pub use hook::{DEFAULT_INSTRUCTION, session_start};
 pub use list::{Scope, list_todos};
 pub use recap::recap;
 pub use relocate::move_todos;

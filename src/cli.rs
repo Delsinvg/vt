@@ -5,7 +5,8 @@ use clap::{Parser, Subcommand};
     name = "vt",
     version,
     arg_required_else_help = true,
-    about = "Todos in your Markdown notes, from the terminal"
+    about = "Todos in your Markdown notes, from the terminal",
+    after_help = "Configuration (~/.config/vt/config.toml, every setting optional):\n  vault = \"~/Documents/notes\"   where your notes are; the VAULT variable wins over this\n  inbox = \"Inbox.md\"           the note new todos go to\n  section = \"Todo\"             the '## ' section that projects collect todos in\n  ignore = [\"Templates\"]       folders, relative to the vault, that vt skips\n  week_ends_on = \"friday\"      the day @thisweek and @nextweek point to\n  hook_instruction = \"...\"     what Claude Code does with the project note (vt hook)"
 )]
 pub struct Cli {
     #[command(subcommand)]

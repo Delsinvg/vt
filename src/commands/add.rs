@@ -1,11 +1,10 @@
 use std::error::Error;
 use std::io::Write;
 
-use chrono::NaiveDate;
-
 use super::choose::choose_project;
 use super::{plain, title_of};
 use crate::config::Layout;
+use crate::dates::Calendar;
 use crate::inbox::{self, NewTodo};
 use crate::picker::Prompt;
 use crate::vault::Vault;
@@ -14,11 +13,11 @@ pub fn add_todo(
     vault: &Vault,
     layout: &Layout,
     words: &[String],
-    today: NaiveDate,
+    calendar: &Calendar,
     prompt: &mut impl Prompt,
     out: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
-    let todo = inbox::compose(words, today)?;
+    let todo = inbox::compose(words, calendar)?;
 
     if let Some(query) = &todo.project {
         let projects = vault.notes_with_section(&layout.section_heading)?;
@@ -49,6 +48,7 @@ fn report(out: &mut impl Write, place: &str, todo: &NewTodo) -> Result<(), Box<d
 mod tests {
     use super::*;
     use crate::picker::ScriptedPrompt;
+    use chrono::NaiveDate;
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -75,7 +75,7 @@ mod tests {
             &Vault::new(directory.path()),
             &layout(),
             &words,
-            friday(),
+            &Calendar::on(friday()),
             &mut ScriptedPrompt::non_interactive(),
             &mut out,
         )

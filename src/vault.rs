@@ -23,11 +23,24 @@ pub struct VaultTodo {
 
 pub struct Vault {
     root: PathBuf,
+    ignored: Vec<PathBuf>,
 }
 
 impl Vault {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            ignored: Vec::new(),
+        }
+    }
+
+    pub fn ignoring(mut self, folders: Vec<PathBuf>) -> Self {
+        self.ignored = folders;
+        self
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     pub fn todos(&self) -> io::Result<Vec<VaultTodo>> {
@@ -158,7 +171,7 @@ impl Vault {
 
         for entry in WalkDir::new(&self.root)
             .into_iter()
-            .filter_entry(is_visible)
+            .filter_entry(|entry| is_visible(entry) && !self.is_ignored(entry.path()))
         {
             let entry = entry?;
             if is_markdown(entry.path()) {
@@ -168,6 +181,14 @@ impl Vault {
 
         notes.sort();
         Ok(notes)
+    }
+
+    fn is_ignored(&self, path: &Path) -> bool {
+        path.strip_prefix(&self.root).is_ok_and(|relative| {
+            self.ignored
+                .iter()
+                .any(|folder| relative.starts_with(folder))
+        })
     }
 }
 
@@ -258,6 +279,32 @@ mod tests {
         ]);
 
         assert!(Vault::new(directory.path()).todos().unwrap().is_empty());
+    }
+
+    #[test]
+    fn skips_ignored_folders_and_everything_inside_them() {
+        let directory = vault_with(&[
+            ("Templates/Project.md", "- [ ] template todo\n"),
+            ("Archive/2024/Old.md", "- [ ] old todo\n"),
+            (
+                "Projects/Archive.md",
+                "- [ ] a note that is merely called Archive\n",
+            ),
+        ]);
+
+        let todos = Vault::new(directory.path())
+            .ignoring(vec![PathBuf::from("Templates"), PathBuf::from("Archive")])
+            .todos()
+            .unwrap();
+
+        assert_eq!(
+            locations(&todos),
+            vec![(
+                "Projects/Archive.md".to_string(),
+                1,
+                "a note that is merely called Archive"
+            )]
+        );
     }
 
     #[test]

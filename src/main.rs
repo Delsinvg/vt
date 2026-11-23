@@ -24,6 +24,7 @@ use clap::Parser;
 
 use cli::{Cli, Command};
 use commands::Scope;
+use dates::Calendar;
 use output::Style;
 use picker::TerminalPrompt;
 use vault::Vault;
@@ -47,18 +48,13 @@ fn reader_stopped_listening(error: &(dyn Error + 'static)) -> bool {
 
 fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     if let Command::Hook = cli.command {
-        let mut out = io::stdout().lock();
-        commands::session_start(
-            config::vault_root().ok(),
-            &config::home(),
-            io::stdin(),
-            &mut out,
-        )
-        .ok();
+        run_hook();
         return Ok(());
     }
 
-    let vault = Vault::new(config::vault_root()?);
+    let settings = config::load()?;
+    let vault = Vault::new(settings.vault_root()?).ignoring(settings.ignored);
+    let layout = settings.layout;
     let mut out = io::stdout().lock();
     let style = Style {
         terminal: out.is_terminal(),
@@ -67,7 +63,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         interactive: io::stdin().is_terminal(),
     };
     let today = Local::now().date_naive();
-    let layout = config::layout();
+    let calendar = Calendar {
+        today,
+        week_ends_on: settings.week_ends_on,
+    };
 
     match cli.command {
         Command::Hook => {}
@@ -80,7 +79,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             commands::list_todos(&vault.todos()?, &scope, style, &mut out)?
         }
         Command::Inbox { words } => {
-            commands::add_todo(&vault, &layout, &words, today, &mut prompt, &mut out)?
+            commands::add_todo(&vault, &layout, &words, &calendar, &mut prompt, &mut out)?
         }
         Command::Move { words } => commands::move_todos(
             &vault,
@@ -105,7 +104,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 &vault.todos()?,
                 &query,
                 when.as_deref(),
-                today,
+                &calendar,
                 &mut prompt,
                 &mut out,
             )?
@@ -114,7 +113,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             commands::agenda(&vault.todos()?, project.as_deref(), today, style, &mut out)?
         }
         Command::Recap { period, project } => {
-            let period = dates::parse_period(&period, today)?;
+            let period = dates::parse_period(&period, &calendar)?;
             commands::recap(
                 &vault.todos()?,
                 &period,
@@ -147,4 +146,28 @@ fn current_project_folder(vault: &Vault) -> io::Result<Option<PathBuf>> {
     };
     let projects = vault.projects(&config::home())?;
     Ok(project::folder_for(&projects, &repository))
+}
+
+fn run_hook() {
+    let Ok(settings) = config::load() else {
+        return;
+    };
+    let vault = settings
+        .vault_root()
+        .ok()
+        .map(|root| Vault::new(root).ignoring(settings.ignored.clone()));
+    let instruction = settings
+        .hook_instruction
+        .as_deref()
+        .unwrap_or(commands::DEFAULT_INSTRUCTION);
+
+    let mut out = io::stdout().lock();
+    commands::session_start(
+        vault.as_ref(),
+        instruction,
+        &config::home(),
+        io::stdin(),
+        &mut out,
+    )
+    .ok();
 }

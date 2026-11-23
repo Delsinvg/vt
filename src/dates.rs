@@ -6,7 +6,30 @@ mod vocabulary;
 
 use vocabulary::{Keyword, PeriodWord, keyword, means_no_date, period};
 
-const WORKWEEK_END: Weekday = Weekday::Fri;
+pub const DEFAULT_WEEK_END: Weekday = Weekday::Fri;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Calendar {
+    pub today: NaiveDate,
+    pub week_ends_on: Weekday,
+}
+
+#[cfg(test)]
+impl Calendar {
+    pub fn on(today: NaiveDate) -> Self {
+        Self {
+            today,
+            week_ends_on: DEFAULT_WEEK_END,
+        }
+    }
+}
+
+pub fn weekday_named(word: &str) -> Option<Weekday> {
+    match keyword(&normalize(word))? {
+        Keyword::On(day) => Some(day),
+        _ => None,
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub struct UnknownDate(pub String);
@@ -23,21 +46,22 @@ impl fmt::Display for UnknownDate {
 
 impl std::error::Error for UnknownDate {}
 
-pub fn parse_date(input: &str, today: NaiveDate) -> Result<NaiveDate, UnknownDate> {
+pub fn parse_date(input: &str, calendar: &Calendar) -> Result<NaiveDate, UnknownDate> {
+    let today = calendar.today;
     let word = normalize(input);
 
     keyword(&word)
-        .and_then(|keyword| resolve(keyword, today))
+        .and_then(|keyword| resolve(keyword, calendar))
         .or_else(|| day_and_month(input, today))
         .or_else(|| NaiveDate::parse_from_str(input, "%Y-%m-%d").ok())
         .ok_or_else(|| UnknownDate(input.to_string()))
 }
 
-pub fn parse_due(input: &str, today: NaiveDate) -> Result<Option<NaiveDate>, UnknownDate> {
+pub fn parse_due(input: &str, calendar: &Calendar) -> Result<Option<NaiveDate>, UnknownDate> {
     if means_no_date(&normalize(input)) {
         return Ok(None);
     }
-    parse_date(input, today).map(Some)
+    parse_date(input, calendar).map(Some)
 }
 
 #[derive(Debug, PartialEq)]
@@ -61,7 +85,8 @@ impl fmt::Display for UnknownPeriod {
 
 impl std::error::Error for UnknownPeriod {}
 
-pub fn parse_period(input: &str, today: NaiveDate) -> Result<Period, UnknownPeriod> {
+pub fn parse_period(input: &str, calendar: &Calendar) -> Result<Period, UnknownPeriod> {
+    let today = calendar.today;
     let unknown = || UnknownPeriod(input.to_string());
     let word = period(&normalize(input)).ok_or_else(unknown)?;
     let monday = today - Days::new(u64::from(today.weekday().num_days_from_monday()));
@@ -109,13 +134,16 @@ fn normalize(input: &str) -> String {
         .collect()
 }
 
-fn resolve(keyword: Keyword, today: NaiveDate) -> Option<NaiveDate> {
+fn resolve(keyword: Keyword, calendar: &Calendar) -> Option<NaiveDate> {
+    let today = calendar.today;
     match keyword {
         Keyword::Today => Some(today),
         Keyword::Tomorrow => today.checked_add_days(Days::new(1)),
         Keyword::DayAfterTomorrow => today.checked_add_days(Days::new(2)),
-        Keyword::ThisWeek => Some(next_or_same(today, WORKWEEK_END)),
-        Keyword::NextWeek => next_or_same(today, WORKWEEK_END).checked_add_days(Days::new(7)),
+        Keyword::ThisWeek => Some(next_or_same(today, calendar.week_ends_on)),
+        Keyword::NextWeek => {
+            next_or_same(today, calendar.week_ends_on).checked_add_days(Days::new(7))
+        }
         Keyword::ThisMonth => last_day_of_month(today, 0),
         Keyword::NextMonth => last_day_of_month(today, 1),
         Keyword::On(day) => Some(next_after(today, day)),
@@ -160,7 +188,7 @@ mod tests {
     const FRIDAY: (i32, u32, u32) = (2026, 11, 20);
 
     fn on_friday(input: &str) -> Result<NaiveDate, UnknownDate> {
-        parse_date(input, date(FRIDAY.0, FRIDAY.1, FRIDAY.2))
+        parse_date(input, &Calendar::on(date(FRIDAY.0, FRIDAY.1, FRIDAY.2)))
     }
 
     #[test]
@@ -190,7 +218,7 @@ mod tests {
     #[test]
     fn this_week_on_a_saturday_means_the_coming_friday() {
         assert_eq!(
-            parse_date("thisweek", date(2026, 11, 21)),
+            parse_date("thisweek", &Calendar::on(date(2026, 11, 21))),
             Ok(date(2026, 11, 27))
         );
     }
@@ -206,7 +234,7 @@ mod tests {
     #[test]
     fn next_month_after_the_end_of_january_is_the_end_of_february() {
         assert_eq!(
-            parse_date("nextmonth", date(2027, 1, 31)),
+            parse_date("nextmonth", &Calendar::on(date(2027, 1, 31))),
             Ok(date(2027, 2, 28))
         );
     }
@@ -239,13 +267,16 @@ mod tests {
     fn none_or_geen_means_no_due_date() {
         let friday = date(FRIDAY.0, FRIDAY.1, FRIDAY.2);
 
-        assert_eq!(parse_due("none", friday), Ok(None));
-        assert_eq!(parse_due("geen", friday), Ok(None));
-        assert_eq!(parse_due("tomorrow", friday), Ok(Some(date(2026, 11, 21))));
+        assert_eq!(parse_due("none", &Calendar::on(friday)), Ok(None));
+        assert_eq!(parse_due("geen", &Calendar::on(friday)), Ok(None));
+        assert_eq!(
+            parse_due("tomorrow", &Calendar::on(friday)),
+            Ok(Some(date(2026, 11, 21)))
+        );
     }
 
     fn period_on_friday(input: &str) -> Result<(NaiveDate, NaiveDate), UnknownPeriod> {
-        parse_period(input, date(FRIDAY.0, FRIDAY.1, FRIDAY.2))
+        parse_period(input, &Calendar::on(date(FRIDAY.0, FRIDAY.1, FRIDAY.2)))
             .map(|period| (period.from, period.until))
     }
 
@@ -294,7 +325,7 @@ mod tests {
     #[test]
     fn last_month_in_january_is_last_years_december() {
         assert_eq!(
-            parse_period("vorigemaand", date(2027, 1, 15))
+            parse_period("vorigemaand", &Calendar::on(date(2027, 1, 15)))
                 .map(|period| (period.from, period.until)),
             Ok((date(2026, 12, 1), date(2026, 12, 31)))
         );
@@ -327,6 +358,27 @@ mod tests {
     #[test]
     fn an_unknown_period_is_an_error() {
         assert!(period_on_friday("nextweek").is_err());
+    }
+
+    #[test]
+    fn a_week_can_end_on_sunday() {
+        let calendar = Calendar {
+            today: date(2026, 11, 20),
+            week_ends_on: Weekday::Sun,
+        };
+
+        assert_eq!(parse_date("thisweek", &calendar), Ok(date(2026, 11, 22)));
+        assert_eq!(
+            parse_date("volgendeweek", &calendar),
+            Ok(date(2026, 11, 29))
+        );
+    }
+
+    #[test]
+    fn weekdays_are_named_in_both_languages() {
+        assert_eq!(weekday_named("sunday"), Some(Weekday::Sun));
+        assert_eq!(weekday_named("Zondag"), Some(Weekday::Sun));
+        assert_eq!(weekday_named("tomorrow"), None);
     }
 
     #[test]

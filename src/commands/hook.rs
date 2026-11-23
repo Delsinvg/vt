@@ -11,18 +11,19 @@ use crate::vault::Vault;
 
 const MAX_NOTE_CHARACTERS: usize = 8000;
 const SHORTENED: &str = "\n\n[shortened: read the full note]";
-const FIRST_REPLY: &str = "In your first reply, tell the user in two or three sentences where this branch stands: its status, what it waits for and its open todos. Keep the note current as agreed in your instructions.";
+pub const DEFAULT_INSTRUCTION: &str = "In your first reply, tell the user in two or three sentences where this branch stands: its status, what it waits for and its open todos. Keep the note current as agreed in your instructions.";
 
 pub fn session_start(
-    vault_root: Option<PathBuf>,
+    vault: Option<&Vault>,
+    instruction: &str,
     home: &Path,
     input: impl Read,
     out: &mut impl Write,
 ) -> io::Result<()> {
-    let Some(vault_root) = vault_root else {
+    let Some(vault) = vault else {
         return Ok(());
     };
-    let Some(context) = context_for(&vault_root, home, &working_directory(input)) else {
+    let Some(context) = context_for(vault, instruction, home, &working_directory(input)) else {
         return Ok(());
     };
 
@@ -48,26 +49,26 @@ fn working_directory(mut input: impl Read) -> PathBuf {
         .unwrap_or_default()
 }
 
-fn context_for(vault_root: &Path, home: &Path, directory: &Path) -> Option<String> {
+fn context_for(vault: &Vault, instruction: &str, home: &Path, directory: &Path) -> Option<String> {
     let repository = git::repository_root(directory)?;
-    let projects = Vault::new(vault_root).projects(home).ok()?;
+    let projects = vault.projects(home).ok()?;
 
     let Some(project) = project::owner_of(&projects, &repository) else {
         return Some(format!(
             "No project note in the vault ({}) lists the repository {} under 'repos:'. If this looks like an active project, offer to create one.",
-            vault_root.display(),
+            vault.root().display(),
             repository.display()
         ));
     };
 
-    let note = vault_root.join(&project.note);
+    let note = vault.root().join(&project.note);
     let content = fs::read_to_string(&note).ok()?;
     let worktree = git::worktree_root(directory).unwrap_or(repository);
     let branch =
         git::current_branch(directory).unwrap_or_else(|| "none (detached HEAD)".to_string());
 
     Some(format!(
-        "Project note: {}\nWorktree: {}\nBranch: {branch}\n\n{FIRST_REPLY}\n\n{}",
+        "Project note: {}\nWorktree: {}\nBranch: {branch}\n\n{instruction}\n\n{}",
         note.display(),
         worktree.display(),
         shortened(&content)
@@ -129,10 +130,16 @@ mod tests {
     }
 
     fn run(vault: Option<&Path>, directory: &Path) -> String {
+        run_with(vault, DEFAULT_INSTRUCTION, directory)
+    }
+
+    fn run_with(vault: Option<&Path>, instruction: &str, directory: &Path) -> String {
         let input = json!({ "cwd": directory }).to_string();
+        let vault = vault.map(Vault::new);
         let mut out = Vec::new();
         session_start(
-            vault.map(Path::to_path_buf),
+            vault.as_ref(),
+            instruction,
             Path::new("/home/someone"),
             input.as_bytes(),
             &mut out,
@@ -161,6 +168,21 @@ mod tests {
         assert!(context.contains("Projects/Garden/Garden.md"));
         assert!(context.contains("Branch: main"));
         assert!(context.contains("- [ ] Water the plants"));
+    }
+
+    #[test]
+    fn uses_the_configured_instruction() {
+        let setup = setup(true);
+
+        let output = run_with(
+            Some(setup.vault.path()),
+            "Only list the open todos.",
+            &setup.code.path().join("garden"),
+        );
+
+        let context = context(&output);
+        assert!(context.contains("Only list the open todos."));
+        assert!(!context.contains(DEFAULT_INSTRUCTION));
     }
 
     #[test]
