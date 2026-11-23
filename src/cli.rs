@@ -32,13 +32,13 @@ pub enum Command {
 
     #[command(
         about = "Add a todo to your inbox, or show the inbox without text",
-        after_help = "Examples:\n  vt inbox Call the plumber\n  vt inbox Call the plumber @tomorrow\n  vt inbox Review https://gitlab.com/acme/shop/-/merge_requests/12\n\nDates: today, tomorrow, monday..sunday, thisweek, nextweek, thismonth, nextmonth, 25/11, 2026-12-01 (Dutch words work too)"
+        after_help = "Examples:\n  vt inbox Call the plumber\n  vt inbox Call the plumber @tomorrow\n  vt inbox Rake the leaves +garden     (straight into a project)\n  vt inbox Review https://gitlab.com/acme/shop/-/merge_requests/12\n\nDates: today, tomorrow, monday..sunday, thisweek, nextweek, thismonth, nextmonth, 25/11, 2026-12-01 (Dutch words work too)"
     )]
     Inbox {
         #[arg(
             trailing_var_arg = true,
             allow_hyphen_values = true,
-            help = "The todo, with @date and links"
+            help = "The todo, with @date, +project and links"
         )]
         words: Vec<String>,
     },
@@ -65,6 +65,20 @@ pub enum Command {
             trailing_var_arg = true,
             allow_hyphen_values = true,
             help = "Part of the todo text, optionally followed by @date or @none"
+        )]
+        words: Vec<String>,
+    },
+
+    #[command(
+        name = "move",
+        about = "Move a todo, with its details, into a project",
+        after_help = "Examples:\n  vt move hose +garden\n  vt move hose        (pick the project from a list)\n  vt move             (pick the todo, then the project)"
+    )]
+    Move {
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            help = "Part of the todo text, optionally followed by +project"
         )]
         words: Vec<String>,
     },

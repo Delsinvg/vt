@@ -5,6 +5,7 @@ mod dates;
 mod git;
 mod inbox;
 mod links;
+mod markdown;
 mod output;
 mod picker;
 mod project;
@@ -15,7 +16,7 @@ mod vault;
 use std::env;
 use std::error::Error;
 use std::io::{self, IsTerminal};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use chrono::Local;
@@ -54,6 +55,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         interactive: io::stdin().is_terminal(),
     };
     let today = Local::now().date_naive();
+    let layout = config::layout();
 
     match cli.command {
         Command::Todo { project, all } => {
@@ -61,14 +63,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             commands::list_todos(&vault.todos()?, &scope, style, &mut out)?
         }
         Command::Inbox { words } if words.is_empty() => {
-            let scope = Scope::Matching(config::INBOX_NOTE.to_string());
+            let scope = Scope::Matching(layout.inbox.display().to_string());
             commands::list_todos(&vault.todos()?, &scope, style, &mut out)?
         }
-        Command::Inbox { words } => commands::add_to_inbox(
+        Command::Inbox { words } => {
+            commands::add_todo(&vault, &layout, &words, today, &mut prompt, &mut out)?
+        }
+        Command::Move { words } => commands::move_todos(
             &vault,
-            Path::new(config::INBOX_NOTE),
+            &vault.todos()?,
             &words,
-            today,
+            &layout,
+            &mut prompt,
             &mut out,
         )?,
         Command::Tick { query } => commands::tick(

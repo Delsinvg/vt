@@ -4,12 +4,16 @@ mod change;
 mod choose;
 mod list;
 mod recap;
+mod relocate;
 
-pub use add::add_to_inbox;
+pub use add::add_todo;
 pub use agenda::agenda;
 pub use change::{set_due, split_date, tick};
 pub use list::{Scope, list_todos};
 pub use recap::recap;
+pub use relocate::move_todos;
+
+use std::path::Path;
 
 use crate::output::Style;
 use crate::select;
@@ -28,9 +32,11 @@ fn note_name(found: &VaultTodo) -> String {
 }
 
 fn note_title(found: &VaultTodo) -> String {
-    found
-        .note
-        .file_stem()
+    title_of(&found.note)
+}
+
+fn title_of(note: &Path) -> String {
+    note.file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default()
 }

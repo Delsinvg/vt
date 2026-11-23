@@ -4,10 +4,15 @@ use std::path::{Path, PathBuf};
 
 use walkdir::{DirEntry, WalkDir};
 
+use crate::markdown;
 use crate::project::{Project, repos_in};
 use crate::todo::Todo;
 
 const CHANGED_SINCE_READ: &str = "the note changed while vt was running; run the command again";
+
+fn missing_section(note: &Path, heading: &str) -> io::Error {
+    io::Error::other(format!("{} has no '{heading}' section", note.display()))
+}
 
 #[derive(Debug, PartialEq)]
 pub struct VaultTodo {
@@ -84,6 +89,68 @@ impl Vault {
         lines[index] = &replacement;
 
         fs::write(path, lines.join("\n"))
+    }
+
+    pub fn notes_with_section(&self, heading: &str) -> io::Result<Vec<PathBuf>> {
+        let mut found = Vec::new();
+        for note in self.notes()? {
+            if markdown::has_section(&fs::read_to_string(self.root.join(&note))?, heading) {
+                found.push(note);
+            }
+        }
+        Ok(found)
+    }
+
+    pub fn add_to_section(&self, note: &Path, heading: &str, line: &str) -> io::Result<()> {
+        let mut lines = self.lines_of(note)?;
+        if !markdown::insert_under_section(&mut lines, heading, vec![line.to_string()]) {
+            return Err(missing_section(note, heading));
+        }
+        self.write_lines(note, &lines)
+    }
+
+    pub fn move_todo(
+        &self,
+        found: &VaultTodo,
+        destination: &Path,
+        heading: &str,
+    ) -> io::Result<()> {
+        if found.note == destination {
+            return Err(io::Error::other(format!(
+                "'{}' is already in {}",
+                found.todo.text,
+                destination.display()
+            )));
+        }
+
+        let mut source = self.lines_of(&found.note)?;
+        let index = found.line - 1;
+        let still_there = source
+            .get(index)
+            .and_then(|line| Todo::parse(line))
+            .as_ref()
+            == Some(&found.todo);
+        if !still_there {
+            return Err(io::Error::other(CHANGED_SINCE_READ));
+        }
+
+        let block = markdown::take_block(&mut source, index);
+        let mut target = self.lines_of(destination)?;
+        if !markdown::insert_under_section(&mut target, heading, block) {
+            return Err(missing_section(destination, heading));
+        }
+
+        self.write_lines(destination, &target)?;
+        self.write_lines(&found.note, &source)
+    }
+
+    fn lines_of(&self, note: &Path) -> io::Result<Vec<String>> {
+        let content = fs::read_to_string(self.root.join(note))?;
+        Ok(content.lines().map(String::from).collect())
+    }
+
+    fn write_lines(&self, note: &Path, lines: &[String]) -> io::Result<()> {
+        fs::write(self.root.join(note), lines.join("\n") + "\n")
     }
 
     fn notes(&self) -> io::Result<Vec<PathBuf>> {
@@ -305,5 +372,82 @@ mod tests {
         .unwrap();
 
         assert!(vault.replace_todo(&found, &found.todo).is_err());
+    }
+
+    const TASKS: &str = "## Tasks";
+
+    fn garden_and_inbox() -> TempDir {
+        vault_with(&[
+            (
+                "Inbox.md",
+                "# Inbox\n\n- [ ] Buy a hose\n\t- the long one\n- [ ] Call the plumber\n",
+            ),
+            ("Garden.md", "# Garden\n## Tasks\n\n## Links\n"),
+            ("Kitchen.md", "# Kitchen\n"),
+        ])
+    }
+
+    fn read(directory: &TempDir, note: &str) -> String {
+        fs::read_to_string(directory.path().join(note)).unwrap()
+    }
+
+    #[test]
+    fn finds_the_notes_that_have_the_section() {
+        let directory = garden_and_inbox();
+
+        assert_eq!(
+            Vault::new(directory.path())
+                .notes_with_section(TASKS)
+                .unwrap(),
+            vec![PathBuf::from("Garden.md")]
+        );
+    }
+
+    #[test]
+    fn moves_a_todo_with_its_details_into_the_section() {
+        let directory = garden_and_inbox();
+        let vault = Vault::new(directory.path());
+        let hose = vault.todos().unwrap().remove(0);
+
+        vault
+            .move_todo(&hose, Path::new("Garden.md"), TASKS)
+            .unwrap();
+
+        assert_eq!(
+            read(&directory, "Garden.md"),
+            "# Garden\n## Tasks\n\n- [ ] Buy a hose\n\t- the long one\n\n## Links\n"
+        );
+        assert_eq!(
+            read(&directory, "Inbox.md"),
+            "# Inbox\n\n- [ ] Call the plumber\n"
+        );
+    }
+
+    #[test]
+    fn refuses_to_move_into_a_note_without_the_section() {
+        let directory = garden_and_inbox();
+        let vault = Vault::new(directory.path());
+        let hose = vault.todos().unwrap().remove(0);
+
+        let error = vault
+            .move_todo(&hose, Path::new("Kitchen.md"), TASKS)
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "Kitchen.md has no '## Tasks' section");
+        assert!(read(&directory, "Inbox.md").contains("Buy a hose"));
+    }
+
+    #[test]
+    fn adds_a_new_line_to_a_section() {
+        let directory = garden_and_inbox();
+
+        Vault::new(directory.path())
+            .add_to_section(Path::new("Garden.md"), TASKS, "- [ ] Rake the leaves")
+            .unwrap();
+
+        assert_eq!(
+            read(&directory, "Garden.md"),
+            "# Garden\n## Tasks\n\n- [ ] Rake the leaves\n\n## Links\n"
+        );
     }
 }

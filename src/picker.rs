@@ -1,14 +1,16 @@
 use std::io;
 
-use inquire::{InquireError, MultiSelect, Text};
+use inquire::{InquireError, MultiSelect, Select, Text};
 
-const PICK_HELP: &str = "type to filter, space to select, enter to confirm, esc to cancel";
+const PICK_MANY_HELP: &str = "type to filter, space to select, enter to confirm, esc to cancel";
+const PICK_ONE_HELP: &str = "type to filter, enter to choose, esc to cancel";
 const DATE_HELP: &str =
     "tomorrow, friday, nextweek, thismonth, 25/11, 2026-12-01 or none (Dutch works too)";
 
 pub trait Prompt {
     fn interactive(&self) -> bool;
-    fn pick(&mut self, options: Vec<String>) -> io::Result<Vec<usize>>;
+    fn pick_many(&mut self, question: &str, options: Vec<String>) -> io::Result<Vec<usize>>;
+    fn pick_one(&mut self, question: &str, options: Vec<String>) -> io::Result<Option<usize>>;
     fn ask_date(&mut self) -> io::Result<Option<String>>;
 }
 
@@ -21,11 +23,19 @@ impl Prompt for TerminalPrompt {
         self.interactive
     }
 
-    fn pick(&mut self, options: Vec<String>) -> io::Result<Vec<usize>> {
-        let picked = MultiSelect::new("Which todo?", options)
-            .with_help_message(PICK_HELP)
+    fn pick_many(&mut self, question: &str, options: Vec<String>) -> io::Result<Vec<usize>> {
+        let picked = MultiSelect::new(question, options)
+            .with_help_message(PICK_MANY_HELP)
             .raw_prompt()
             .map(|chosen| chosen.into_iter().map(|option| option.index).collect());
+        empty_when_cancelled(picked)
+    }
+
+    fn pick_one(&mut self, question: &str, options: Vec<String>) -> io::Result<Option<usize>> {
+        let picked = Select::new(question, options)
+            .with_help_message(PICK_ONE_HELP)
+            .raw_prompt()
+            .map(|chosen| Some(chosen.index));
         empty_when_cancelled(picked)
     }
 
@@ -52,6 +62,7 @@ fn empty_when_cancelled<T: Default>(result: Result<T, InquireError>) -> io::Resu
 pub struct ScriptedPrompt {
     pub interactive: bool,
     pub picks: Vec<usize>,
+    pub choice: Option<usize>,
     pub date: Option<String>,
     pub shown_options: Vec<String>,
 }
@@ -66,9 +77,15 @@ impl ScriptedPrompt {
         Self {
             interactive,
             picks,
+            choice: None,
             date: date.map(String::from),
             shown_options: Vec::new(),
         }
+    }
+
+    pub fn choosing(mut self, choice: usize) -> Self {
+        self.choice = Some(choice);
+        self
     }
 }
 
@@ -78,9 +95,14 @@ impl Prompt for ScriptedPrompt {
         self.interactive
     }
 
-    fn pick(&mut self, options: Vec<String>) -> io::Result<Vec<usize>> {
+    fn pick_many(&mut self, _question: &str, options: Vec<String>) -> io::Result<Vec<usize>> {
         self.shown_options = options;
         Ok(self.picks.clone())
+    }
+
+    fn pick_one(&mut self, _question: &str, options: Vec<String>) -> io::Result<Option<usize>> {
+        self.shown_options = options;
+        Ok(self.choice)
     }
 
     fn ask_date(&mut self) -> io::Result<Option<String>> {

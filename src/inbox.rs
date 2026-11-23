@@ -9,6 +9,7 @@ use crate::links;
 pub struct NewTodo {
     pub text: String,
     pub due: Option<NaiveDate>,
+    pub project: Option<String>,
 }
 
 impl NewTodo {
@@ -40,6 +41,7 @@ impl std::error::Error for ComposeError {}
 pub fn compose(words: &[String], today: NaiveDate) -> Result<NewTodo, ComposeError> {
     let mut text_parts = Vec::new();
     let mut due = None;
+    let mut project = None;
 
     for word in words
         .iter()
@@ -47,6 +49,8 @@ pub fn compose(words: &[String], today: NaiveDate) -> Result<NewTodo, ComposeErr
     {
         if let Some(when) = word.strip_prefix('@') {
             due = Some(parse_date(when, today).map_err(ComposeError::Date)?);
+        } else if let Some(name) = word.strip_prefix('+').filter(|name| !name.is_empty()) {
+            project = Some(name.to_string());
         } else if links::is_url(word) {
             text_parts.push(links::markdown_link(word));
         } else {
@@ -61,6 +65,7 @@ pub fn compose(words: &[String], today: NaiveDate) -> Result<NewTodo, ComposeErr
     Ok(NewTodo {
         text: text_parts.join(" "),
         due,
+        project,
     })
 }
 
@@ -120,6 +125,22 @@ mod tests {
             todo.line(),
             "- [ ] Review [shop#3](https://gitlab.com/acme/shop/-/issues/3) 📅 2026-11-21"
         );
+    }
+
+    #[test]
+    fn a_plus_word_names_the_project() {
+        let todo = compose(&words("Rake the leaves +garden @friday"), friday()).unwrap();
+
+        assert_eq!(todo.project, Some("garden".to_string()));
+        assert_eq!(todo.line(), "- [ ] Rake the leaves 📅 2026-11-27");
+    }
+
+    #[test]
+    fn a_lone_plus_is_just_text() {
+        let todo = compose(&words("Add 1 + 1"), friday()).unwrap();
+
+        assert_eq!(todo.project, None);
+        assert_eq!(todo.text, "Add 1 + 1");
     }
 
     #[test]
