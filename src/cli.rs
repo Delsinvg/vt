@@ -80,7 +80,7 @@ pub enum Command {
 
     #[command(
         about = "Show what you checked off in a period",
-        after_help = "Periods: thisweek (default), lastweek, today, yesterday, thismonth, lastmonth, lastyear (Dutch words work too)\n\nExamples:\n  vt recap\n  vt recap lastweek\n  vt recap thismonth --project garden"
+        after_help = "Periods: thisweek (default), lastweek, today, yesterday, thismonth, lastmonth, thisyear, lastyear (Dutch words work too)\n\nExamples:\n  vt recap\n  vt recap lastweek\n  vt recap thismonth --project garden"
     )]
     Recap {
         #[arg(default_value = "thisweek", help = "Which period to look back on")]

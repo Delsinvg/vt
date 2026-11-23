@@ -53,7 +53,7 @@ impl fmt::Display for UnknownPeriod {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "unknown period '{}': use today, yesterday, thisweek, lastweek, thismonth, lastmonth or lastyear (Dutch words work too)",
+            "unknown period '{}': use today, yesterday, thisweek, lastweek, thismonth, lastmonth, thisyear or lastyear (Dutch words work too)",
             self.0
         )
     }
@@ -80,6 +80,10 @@ pub fn parse_period(input: &str, today: NaiveDate) -> Result<Period, UnknownPeri
             let start = end.and_then(|end| end.with_day(1));
             (start.ok_or_else(unknown)?, end.ok_or_else(unknown)?)
         }
+        PeriodWord::ThisYear => (
+            NaiveDate::from_ymd_opt(today.year(), 1, 1).ok_or_else(unknown)?,
+            today,
+        ),
         PeriodWord::LastYear => {
             let year = today.year() - 1;
             (
@@ -293,6 +297,18 @@ mod tests {
             parse_period("vorigemaand", date(2027, 1, 15))
                 .map(|period| (period.from, period.until)),
             Ok((date(2026, 12, 1), date(2026, 12, 31)))
+        );
+    }
+
+    #[test]
+    fn this_year_runs_from_new_year_until_today() {
+        assert_eq!(
+            period_on_friday("thisyear"),
+            Ok((date(2026, 1, 1), date(2026, 11, 20)))
+        );
+        assert_eq!(
+            period_on_friday("dit jaar"),
+            Ok((date(2026, 1, 1), date(2026, 11, 20)))
         );
     }
 

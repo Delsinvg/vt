@@ -20,6 +20,7 @@ struct Vocabulary {
     next_week: &'static str,
     this_month: &'static str,
     last_month: &'static str,
+    this_year: &'static str,
     last_year: &'static str,
     next_month: &'static str,
     no_date: &'static str,
@@ -36,6 +37,7 @@ const ENGLISH: Vocabulary = Vocabulary {
     next_week: "nextweek",
     this_month: "thismonth",
     last_month: "lastmonth",
+    this_year: "thisyear",
     last_year: "lastyear",
     next_month: "nextmonth",
     no_date: "none",
@@ -60,6 +62,7 @@ const DUTCH: Vocabulary = Vocabulary {
     next_week: "volgendeweek",
     this_month: "dezemaand",
     last_month: "vorigemaand",
+    this_year: "ditjaar",
     last_year: "vorigjaar",
     next_month: "volgendemaand",
     no_date: "geen",
@@ -96,6 +99,7 @@ pub(super) enum PeriodWord {
     LastWeek,
     ThisMonth,
     LastMonth,
+    ThisYear,
     LastYear,
 }
 
@@ -108,6 +112,7 @@ impl Vocabulary {
             (self.last_week, PeriodWord::LastWeek),
             (self.this_month, PeriodWord::ThisMonth),
             (self.last_month, PeriodWord::LastMonth),
+            (self.this_year, PeriodWord::ThisYear),
             (self.last_year, PeriodWord::LastYear),
         ]
         .into_iter()
