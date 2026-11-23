@@ -1,6 +1,22 @@
-# vt
+<p align="center">
+  <img src="assets/logo.svg" alt="vt" width="250">
+</p>
 
-Todos in your Markdown notes, from the terminal.
+<p align="center">Todos in your Markdown notes, from the terminal.</p>
+
+## Why vt exists
+
+Working on many projects at once means switching all day: a hotfix here, a review there, a question from a colleague in between. The hard part is rarely knowing *what* to do. It is remembering *where you left off* in each project, and holding on to the things you notice along the way without losing your focus. Todo apps keep tasks away from the notes and code they belong to, and every new app is one more place to check instead of one less.
+
+So `vt` stays small and works with what you already have:
+
+- **Your notes are the database.** Todos are plain Markdown checkboxes in the notes you already keep, right next to their context. Obsidian, git and any editor keep working.
+- **Capturing takes seconds.** One command or one hotkey, then straight back to what you were doing.
+- **It knows which project you are in.** Inside a repository you see that project's todos; anywhere else, everything.
+- **It works with an AI agent.** Claude Code gets the project note when a session starts and keeps its own follow-ups in a separate section, so your list only shows what you have to do yourself.
+- **No server, no account, no app.** A single program that reads and writes files.
+
+## What it does
 
 `vt` reads and writes plain `- [ ]` checkboxes in a folder of Markdown notes, such as an Obsidian vault. Capture a todo in a second, see what is open per project, check things off and look back on your week, without leaving the terminal and without a separate todo app. Your notes stay the single source of truth: everything `vt` writes is ordinary Markdown that Obsidian and its Tasks plugin understand.
 

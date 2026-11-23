@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 96" width="250" height="96" role="img" aria-label="vt">
+  <style>
+    .ink { fill: none; stroke: #1f2328; }
+    .ink-fill { fill: #1f2328; }
+    .green { fill: none; stroke: #448c27; }
+    .green-fill { fill: #448c27; }
+    .dim { fill: #1f2328; opacity: .35; }
+    .on-green { fill: none; stroke: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .ink { stroke: #e6edf3; }
+      .ink-fill { fill: #e6edf3; }
+      .green { stroke: #95cb82; }
+      .green-fill { fill: #95cb82; }
+      .dim { fill: #e6edf3; }
+      .on-green { stroke: #0d1117; }
+    }
+  </style>
+  <circle class="ink" cx="20" cy="22" r="9" stroke-width="4"/>
+  <rect class="dim" x="38" y="18" width="46" height="8" rx="4"/>
+  <circle class="ink" cx="20" cy="48" r="9" stroke-width="4"/>
+  <rect class="dim" x="38" y="44" width="34" height="8" rx="4"/>
+  <circle class="green-fill" cx="20" cy="74" r="11"/>
+  <path class="on-green" d="M15 74 L19 78 L26 69" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect class="dim" x="38" y="70" width="52" height="8" rx="4"/>
+  <text class="ink-fill" x="110" y="70" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="58" font-weight="700" letter-spacing="-1">vt</text>
+</svg>
