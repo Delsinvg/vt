@@ -32,13 +32,13 @@ Garden
 With Rust installed ([rustup.rs](https://rustup.rs)):
 
 ```sh
-cargo install --git <repository-url>
+cargo install --git https://github.com/Delsinvg/vt
 ```
 
 Or from a clone:
 
 ```sh
-git clone <repository-url> && cd vt
+git clone https://github.com/Delsinvg/vt && cd vt
 cargo install --path .
 ```
 
