@@ -11,7 +11,11 @@ use crate::vault::Vault;
 
 const MAX_NOTE_CHARACTERS: usize = 8000;
 const SHORTENED: &str = "\n\n[shortened: read the full note]";
-pub const DEFAULT_INSTRUCTION: &str = "In your first reply, tell the user in two or three sentences where this branch stands: its status, what it waits for and its open todos. Keep the note current as agreed in your instructions.";
+pub fn default_instruction(agent_heading: &str) -> String {
+    format!(
+        "In your first reply, tell the user in two or three sentences where this branch stands: its status, what it waits for and their open todos. Todos under '{agent_heading}' are yours: work you noted for yourself to pick up later. Everything the user has to do stays outside that section. Keep the note current as agreed in your instructions."
+    )
+}
 
 pub fn session_start(
     vault: Option<&Vault>,
@@ -130,7 +134,7 @@ mod tests {
     }
 
     fn run(vault: Option<&Path>, directory: &Path) -> String {
-        run_with(vault, DEFAULT_INSTRUCTION, directory)
+        run_with(vault, &default_instruction("## Agent"), directory)
     }
 
     fn run_with(vault: Option<&Path>, instruction: &str, directory: &Path) -> String {
@@ -182,7 +186,15 @@ mod tests {
 
         let context = context(&output);
         assert!(context.contains("Only list the open todos."));
-        assert!(!context.contains(DEFAULT_INSTRUCTION));
+        assert!(!context.contains("first reply"));
+    }
+
+    #[test]
+    fn the_default_instruction_names_the_agent_section() {
+        assert!(
+            default_instruction("## Voor Claude")
+                .contains("Todos under '## Voor Claude' are yours")
+        );
     }
 
     #[test]

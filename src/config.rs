@@ -12,6 +12,7 @@ use crate::dates::{DEFAULT_WEEK_END, weekday_named};
 
 const DEFAULT_INBOX: &str = "Inbox.md";
 const DEFAULT_SECTION: &str = "Todo";
+const DEFAULT_AGENT_SECTION: &str = "Agent";
 const VAULT_VARIABLE: &str = "VAULT";
 const HOME_PREFIX: &str = "~/";
 
@@ -19,6 +20,7 @@ const HOME_PREFIX: &str = "~/";
 pub struct Layout {
     pub inbox: PathBuf,
     pub section_heading: String,
+    pub agent_heading: String,
 }
 
 #[derive(Debug)]
@@ -62,6 +64,7 @@ struct ConfigFile {
     vault: Option<String>,
     inbox: Option<String>,
     section: Option<String>,
+    agent_section: Option<String>,
     ignore: Option<Vec<String>>,
     week_ends_on: Option<String>,
     hook_instruction: Option<String>,
@@ -94,6 +97,9 @@ fn load_from(
         .map(PathBuf::from)
         .or_else(|| file.vault.map(|vault| expand_home(&vault, home)));
     let section = file.section.unwrap_or_else(|| DEFAULT_SECTION.to_string());
+    let agent_section = file
+        .agent_section
+        .unwrap_or_else(|| DEFAULT_AGENT_SECTION.to_string());
     let week_ends_on = match file.week_ends_on {
         Some(day) => weekday_named(&day).ok_or_else(|| ConfigError {
             path: path.to_path_buf(),
@@ -113,6 +119,7 @@ fn load_from(
         layout: Layout {
             inbox: PathBuf::from(file.inbox.unwrap_or_else(|| DEFAULT_INBOX.to_string())),
             section_heading: format!("## {section}"),
+            agent_heading: format!("## {agent_section}"),
         },
         ignored,
         week_ends_on,
@@ -171,6 +178,21 @@ mod tests {
         assert_eq!(settings.vault, Some(PathBuf::from("/home/someone/notes")));
         assert_eq!(settings.layout.inbox, PathBuf::from("Capture.md"));
         assert_eq!(settings.layout.section_heading, "## Algemeen");
+    }
+
+    #[test]
+    fn the_agent_section_is_called_agent_unless_configured() {
+        assert_eq!(
+            load_with(None, None).unwrap().layout.agent_heading,
+            "## Agent"
+        );
+        assert_eq!(
+            load_with(Some("agent_section = \"Voor Claude\"\n"), None)
+                .unwrap()
+                .layout
+                .agent_heading,
+            "## Voor Claude"
+        );
     }
 
     #[test]

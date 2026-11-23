@@ -61,6 +61,7 @@ mod tests {
         Layout {
             inbox: PathBuf::from("Inbox.md"),
             section_heading: "## Tasks".to_string(),
+            agent_heading: "## Agent".to_string(),
         }
     }
 

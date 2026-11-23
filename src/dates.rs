@@ -88,7 +88,7 @@ impl std::error::Error for UnknownPeriod {}
 pub fn parse_period(input: &str, calendar: &Calendar) -> Result<Period, UnknownPeriod> {
     let today = calendar.today;
     let unknown = || UnknownPeriod(input.to_string());
-    let word = period(&normalize(input)).ok_or_else(unknown)?;
+    let word = period(&normalize(input.trim_start_matches('@'))).ok_or_else(unknown)?;
     let monday = today - Days::new(u64::from(today.weekday().num_days_from_monday()));
 
     let (from, until) = match word {
@@ -352,6 +352,14 @@ mod tests {
         assert_eq!(
             period_on_friday("vorig-jaar"),
             Ok((date(2025, 1, 1), date(2025, 12, 31)))
+        );
+    }
+
+    #[test]
+    fn a_period_may_start_with_an_at_sign() {
+        assert_eq!(
+            period_on_friday("@vorigeweek"),
+            period_on_friday("vorigeweek")
         );
     }
 

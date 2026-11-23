@@ -15,6 +15,14 @@ $ vt agenda
 
 $ vt tick plumber
 Checked off: Call the plumber
+
+$ vt todo
+Garden
+  Spring
+    ○ Rake the leaves
+    ○ Buy seeds         📅 2026-11-27
+  Todo
+    ○ Water the plants  📅 2026-11-18
 ```
 
 ## Install
@@ -44,6 +52,7 @@ Tell `vt` where your notes are in `~/.config/vt/config.toml`. Every setting is o
 vault = "~/Documents/notes"        # where your notes are
 inbox = "Inbox.md"                 # the note new todos go to
 section = "Todo"                   # the "## " section projects collect todos in
+agent_section = "Agent"            # the "## " section for an AI agent's own todos
 ignore = ["Templates", "Archive"]  # folders, relative to the vault, that vt skips
 week_ends_on = "friday"            # the day @thisweek and @nextweek point to
 hook_instruction = "..."           # what Claude Code does with the project note
@@ -87,13 +96,23 @@ repos:
 - [ ] Rake the leaves
 ```
 
+### The agent's own todos
+
+An AI agent such as Claude Code can keep its own follow-ups in the same note, under `## Agent` at the bottom: code to write, review points, work for the next branch. They stay out of your lists, so only what you have to do yourself shows up in `vt todo`, `agenda`, `tick` and `recap`. `vt todo --agent` shows them, and `vt hook` tells the agent that this section is its own.
+
+```markdown
+## Agent
+### Branch 2
+- [ ] Add tests for the watering schedule
+```
+
 The optional `repos:` list links the note to one or more git repositories. Inside such a repository, or any of its worktrees, `vt todo` shows only the todos of that project's folder, and `vt hook` hands the note to Claude Code.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `vt todo [project]` | Open todos, grouped per note. Inside a project's repository only that project; `--all` for everything |
+| `vt todo [project]` | Open todos, grouped per note and heading, with due dates. Inside a project's repository only that project; `--all` for everything, `--agent` for the agent's todos |
 | `vt agenda [project]` | Every open todo with a due date, earliest first; overdue in red, today in yellow |
 | `vt recap [period]` | What you checked off; `--project` to narrow it down |
 | `vt inbox [text]` | Add a todo, or show the inbox without text |
@@ -139,6 +158,8 @@ Dates start with `@` and work in English and Dutch. Capitals, dashes and spaces 
 | `none` | `geen` | no due date (`vt due` only) |
 
 ### Periods for `vt recap`
+
+An `@` in front is allowed, so `vt recap @lastweek` works too.
 
 | English | Dutch | Covers |
 |---|---|---|

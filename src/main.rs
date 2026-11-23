@@ -23,7 +23,7 @@ use chrono::Local;
 use clap::Parser;
 
 use cli::{Cli, Command};
-use commands::Scope;
+use commands::{Owner, Scope};
 use dates::Calendar;
 use output::Style;
 use picker::TerminalPrompt;
@@ -67,23 +67,30 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         today,
         week_ends_on: settings.week_ends_on,
     };
+    let todos_of =
+        |owner| -> io::Result<_> { Ok(commands::owned_by(vault.todos()?, &layout, owner)) };
 
     match cli.command {
         Command::Hook => {}
-        Command::Todo { project, all } => {
+        Command::Todo {
+            project,
+            all,
+            agent,
+        } => {
             let scope = todo_scope(&vault, project, all)?;
-            commands::list_todos(&vault.todos()?, &scope, today, style, &mut out)?
+            let owner = if agent { Owner::Agent } else { Owner::Me };
+            commands::list_todos(&todos_of(owner)?, &scope, today, style, &mut out)?
         }
         Command::Inbox { words } if words.is_empty() => {
             let scope = Scope::Matching(layout.inbox.display().to_string());
-            commands::list_todos(&vault.todos()?, &scope, today, style, &mut out)?
+            commands::list_todos(&todos_of(Owner::Me)?, &scope, today, style, &mut out)?
         }
         Command::Inbox { words } => {
             commands::add_todo(&vault, &layout, &words, &calendar, &mut prompt, &mut out)?
         }
         Command::Move { words } => commands::move_todos(
             &vault,
-            &vault.todos()?,
+            &todos_of(Owner::Me)?,
             &words,
             &layout,
             &mut prompt,
@@ -91,7 +98,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         )?,
         Command::Tick { query } => commands::tick(
             &vault,
-            &vault.todos()?,
+            &todos_of(Owner::Me)?,
             &query.join(" "),
             today,
             &mut prompt,
@@ -101,7 +108,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             let (query, when) = commands::split_date(&words);
             commands::set_due(
                 &vault,
-                &vault.todos()?,
+                &todos_of(Owner::Me)?,
                 &query,
                 when.as_deref(),
                 &calendar,
@@ -109,13 +116,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 &mut out,
             )?
         }
-        Command::Agenda { project } => {
-            commands::agenda(&vault.todos()?, project.as_deref(), today, style, &mut out)?
-        }
+        Command::Agenda { project } => commands::agenda(
+            &todos_of(Owner::Me)?,
+            project.as_deref(),
+            today,
+            style,
+            &mut out,
+        )?,
         Command::Recap { period, project } => {
             let period = dates::parse_period(&period, &calendar)?;
             commands::recap(
-                &vault.todos()?,
+                &todos_of(Owner::Me)?,
                 &period,
                 project.as_deref(),
                 style,
@@ -158,13 +169,13 @@ fn run_hook() {
         .map(|root| Vault::new(root).ignoring(settings.ignored.clone()));
     let instruction = settings
         .hook_instruction
-        .as_deref()
-        .unwrap_or(commands::DEFAULT_INSTRUCTION);
+        .clone()
+        .unwrap_or_else(|| commands::default_instruction(&settings.layout.agent_heading));
 
     let mut out = io::stdout().lock();
     commands::session_start(
         vault.as_ref(),
-        instruction,
+        &instruction,
         &config::home(),
         io::stdin(),
         &mut out,
