@@ -69,6 +69,7 @@ mod tests {
         VaultTodo {
             note: PathBuf::from(note),
             line: 1,
+            headings: Vec::new(),
             todo: Todo::parse(line).unwrap(),
         }
     }

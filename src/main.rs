@@ -72,11 +72,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         Command::Hook => {}
         Command::Todo { project, all } => {
             let scope = todo_scope(&vault, project, all)?;
-            commands::list_todos(&vault.todos()?, &scope, style, &mut out)?
+            commands::list_todos(&vault.todos()?, &scope, today, style, &mut out)?
         }
         Command::Inbox { words } if words.is_empty() => {
             let scope = Scope::Matching(layout.inbox.display().to_string());
-            commands::list_todos(&vault.todos()?, &scope, style, &mut out)?
+            commands::list_todos(&vault.todos()?, &scope, today, style, &mut out)?
         }
         Command::Inbox { words } => {
             commands::add_todo(&vault, &layout, &words, &calendar, &mut prompt, &mut out)?

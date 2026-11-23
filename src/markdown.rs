@@ -1,3 +1,23 @@
+const CODE_FENCE: &str = "```";
+const DEEPEST_HEADING: usize = 6;
+
+pub fn heading_level(line: &str) -> Option<usize> {
+    let level = line
+        .chars()
+        .take_while(|&character| character == '#')
+        .count();
+    let is_heading = (1..=DEEPEST_HEADING).contains(&level) && line[level..].starts_with(' ');
+    is_heading.then_some(level)
+}
+
+pub fn heading_text(heading: &str) -> &str {
+    heading.trim_start_matches('#').trim()
+}
+
+pub fn is_code_fence(line: &str) -> bool {
+    line.trim_start().starts_with(CODE_FENCE)
+}
+
 pub fn has_section(content: &str, heading: &str) -> bool {
     content.lines().any(|line| line.trim_end() == heading)
 }
@@ -146,6 +166,15 @@ mod tests {
             vec!["- [ ] Buy seeds".into()]
         ));
         assert_eq!(joined(&note), "# Garden\n## Links");
+    }
+
+    #[test]
+    fn recognises_headings_and_their_level() {
+        assert_eq!(heading_level("## Tasks"), Some(2));
+        assert_eq!(heading_level("### MOB-1 badge"), Some(3));
+        assert_eq!(heading_level("#hashtag"), None);
+        assert_eq!(heading_level("####### too deep"), None);
+        assert_eq!(heading_text("###  MOB-1 badge "), "MOB-1 badge");
     }
 
     #[test]

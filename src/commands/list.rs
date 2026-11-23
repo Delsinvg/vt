@@ -1,11 +1,18 @@
+use std::cmp::Ordering;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use super::{note_name, open_todos};
+use chrono::NaiveDate;
+
+use super::{note_name, open_todos, plain, title_of};
+use crate::markdown::heading_text;
 use crate::output::Style;
 use crate::select;
-use crate::todo::Todo;
 use crate::vault::VaultTodo;
+
+const BULLET: &str = "○";
+const UNDER_NOTE: &str = "  ";
+const UNDER_HEADING: &str = "    ";
 
 pub enum Scope {
     All,
@@ -16,6 +23,7 @@ pub enum Scope {
 pub fn list_todos(
     todos: &[VaultTodo],
     scope: &Scope,
+    today: NaiveDate,
     style: Style,
     out: &mut impl Write,
 ) -> io::Result<()> {
@@ -50,18 +58,71 @@ pub fn list_todos(
         if position > 0 {
             writeln!(out)?;
         }
-        writeln!(out, "{}", style.heading(note))?;
-        for found in open.iter().filter(|found| note_name(found) == *note) {
-            writeln!(
-                out,
-                "{} {}",
-                style.checkbox(false),
-                describe(&found.todo, style)
-            )?;
-        }
+        let in_note: Vec<&VaultTodo> = open
+            .iter()
+            .copied()
+            .filter(|found| note_name(found) == *note)
+            .collect();
+        write_note(Path::new(note), &in_note, today, style, out)?;
     }
 
     Ok(())
+}
+
+fn write_note(
+    note: &Path,
+    todos: &[&VaultTodo],
+    today: NaiveDate,
+    style: Style,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    writeln!(out, "{}", style.heading(&title_of(note)))?;
+
+    let widest = todos
+        .iter()
+        .map(|found| plain(&found.todo.text).chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut current_heading: Option<&str> = None;
+
+    for found in todos {
+        let heading = found.headings.last().map(|heading| heading_text(heading));
+        if heading != current_heading {
+            if let Some(heading) = heading {
+                writeln!(out, "{UNDER_NOTE}{}", style.subheading(heading))?;
+            }
+            current_heading = heading;
+        }
+
+        let indent = if heading.is_some() {
+            UNDER_HEADING
+        } else {
+            UNDER_NOTE
+        };
+        let text = style.links(&found.todo.text);
+        match found.todo.due {
+            Some(due) => {
+                let padding = widest - plain(&found.todo.text).chars().count();
+                writeln!(
+                    out,
+                    "{indent}{BULLET} {text}{}  {}",
+                    " ".repeat(padding),
+                    due_label(due, today, style)
+                )?
+            }
+            None => writeln!(out, "{indent}{BULLET} {text}")?,
+        }
+    }
+    Ok(())
+}
+
+fn due_label(due: NaiveDate, today: NaiveDate, style: Style) -> String {
+    let label = format!("📅 {due}");
+    match due.cmp(&today) {
+        Ordering::Less => style.overdue(&label),
+        Ordering::Equal => style.due_today(&label),
+        Ordering::Greater => style.dim(&label),
+    }
 }
 
 fn unique_note_names(todos: &[&VaultTodo]) -> Vec<String> {
@@ -70,61 +131,80 @@ fn unique_note_names(todos: &[&VaultTodo]) -> Vec<String> {
     names
 }
 
-fn describe(todo: &Todo, style: Style) -> String {
-    let text = style.links(&todo.text);
-    match todo.due {
-        Some(due) => format!("{text} 📅 {due}"),
-        None => text,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
+    use crate::todo::Todo;
 
     const PLAIN: Style = Style { terminal: false };
 
-    fn found(note: &str, text: &str, done: bool) -> VaultTodo {
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 11, 20).unwrap()
+    }
+
+    fn found(note: &str, headings: &[&str], line: &str) -> VaultTodo {
         VaultTodo {
             note: PathBuf::from(note),
             line: 1,
-            todo: Todo {
-                text: text.to_string(),
-                done,
-                due: None,
-                completed: None,
-            },
+            headings: headings.iter().map(|heading| heading.to_string()).collect(),
+            todo: Todo::parse(line).unwrap(),
         }
     }
 
     fn render(todos: &[VaultTodo], scope: Scope) -> String {
         let mut out = Vec::new();
-        list_todos(todos, &scope, PLAIN, &mut out).unwrap();
+        list_todos(todos, &scope, today(), PLAIN, &mut out).unwrap();
         String::from_utf8(out).unwrap()
     }
 
     fn sample() -> Vec<VaultTodo> {
         vec![
-            found("Inbox.md", "Call the plumber", false),
-            found("Projects/Garden/Garden.md", "Water the plants", false),
-            found("Projects/Garden/Garden.md", "Buy seeds", true),
-            found("Projects/Kitchen/Kitchen.md", "Fix the tap", false),
+            found("Inbox.md", &[], "- [ ] Call the plumber"),
+            found(
+                "Projects/Garden/Garden.md",
+                &["## Running", "### Spring"],
+                "- [ ] Rake the leaves",
+            ),
+            found(
+                "Projects/Garden/Garden.md",
+                &["## Running", "### Spring"],
+                "- [ ] Buy seeds 📅 2026-11-27",
+            ),
+            found(
+                "Projects/Garden/Garden.md",
+                &["## Todo"],
+                "- [ ] Water the plants 📅 2026-11-18",
+            ),
+            found(
+                "Projects/Garden/Garden.md",
+                &["## Todo"],
+                "- [x] Mow the lawn",
+            ),
+            found(
+                "Projects/Kitchen/Kitchen.md",
+                &["## Todo"],
+                "- [ ] Fix the tap",
+            ),
         ]
     }
 
     #[test]
-    fn groups_open_todos_per_note() {
+    fn groups_todos_per_note_and_heading_with_aligned_dates() {
         assert_eq!(
             render(&sample(), Scope::All),
-            "Inbox.md\n\
-             - [ ] Call the plumber\n\
+            "Inbox\n\
+             \x20 ○ Call the plumber\n\
              \n\
-             Projects/Garden/Garden.md\n\
-             - [ ] Water the plants\n\
+             Garden\n\
+             \x20 Spring\n\
+             \x20   ○ Rake the leaves\n\
+             \x20   ○ Buy seeds         📅 2026-11-27\n\
+             \x20 Todo\n\
+             \x20   ○ Water the plants  📅 2026-11-18\n\
              \n\
-             Projects/Kitchen/Kitchen.md\n\
-             - [ ] Fix the tap\n"
+             Kitchen\n\
+             \x20 Todo\n\
+             \x20   ○ Fix the tap\n"
         );
     }
 
@@ -132,18 +212,21 @@ mod tests {
     fn shows_only_the_matching_project() {
         assert_eq!(
             render(&sample(), Scope::Matching("kitchn".to_string())),
-            "Projects/Kitchen/Kitchen.md\n- [ ] Fix the tap\n"
+            "Kitchen\n  Todo\n    ○ Fix the tap\n"
         );
     }
 
     #[test]
-    fn shows_the_due_date() {
-        let mut todos = vec![found("Inbox.md", "Call the plumber", false)];
-        todos[0].todo.due = NaiveDate::from_ymd_opt(2026, 12, 1);
+    fn a_note_named_differently_from_its_folder_shows_the_folder() {
+        let todos = vec![found(
+            "Projects/Garden/Notes.md",
+            &[],
+            "- [ ] Ask about tiles",
+        )];
 
         assert_eq!(
             render(&todos, Scope::All),
-            "Inbox.md\n- [ ] Call the plumber 📅 2026-12-01\n"
+            "Garden/Notes\n  ○ Ask about tiles\n"
         );
     }
 
@@ -157,7 +240,7 @@ mod tests {
 
     #[test]
     fn says_so_when_everything_is_done() {
-        let todos = vec![found("Inbox.md", "Buy seeds", true)];
+        let todos = vec![found("Inbox.md", &[], "- [x] Buy seeds")];
 
         assert_eq!(render(&todos, Scope::All), "No open todos\n");
     }
@@ -165,16 +248,17 @@ mod tests {
     #[test]
     fn a_folder_shows_every_note_inside_it() {
         let mut todos = sample();
-        todos.push(found("Projects/Garden/Notes.md", "Ask about tiles", false));
+        todos.push(found(
+            "Projects/Garden/Notes.md",
+            &[],
+            "- [ ] Ask about tiles",
+        ));
 
-        assert_eq!(
-            render(&todos, Scope::Folder(PathBuf::from("Projects/Garden"))),
-            "Projects/Garden/Garden.md\n\
-             - [ ] Water the plants\n\
-             \n\
-             Projects/Garden/Notes.md\n\
-             - [ ] Ask about tiles\n"
-        );
+        let rendered = render(&todos, Scope::Folder(PathBuf::from("Projects/Garden")));
+
+        assert!(rendered.starts_with("Garden\n"));
+        assert!(rendered.contains("\nGarden/Notes\n  ○ Ask about tiles\n"));
+        assert!(!rendered.contains("Kitchen"));
     }
 
     #[test]

@@ -18,6 +18,7 @@ fn missing_section(note: &Path, heading: &str) -> io::Error {
 pub struct VaultTodo {
     pub note: PathBuf,
     pub line: usize,
+    pub headings: Vec<String>,
     pub todo: Todo,
 }
 
@@ -192,14 +193,39 @@ impl Vault {
     }
 }
 
-fn todos_in<'a>(note: &'a Path, content: &'a str) -> impl Iterator<Item = VaultTodo> + 'a {
-    content.lines().enumerate().filter_map(|(index, line)| {
-        Todo::parse(line).map(|todo| VaultTodo {
-            note: note.to_path_buf(),
-            line: index + 1,
-            todo,
-        })
-    })
+fn todos_in(note: &Path, content: &str) -> Vec<VaultTodo> {
+    let mut todos = Vec::new();
+    let mut headings: Vec<(usize, String)> = Vec::new();
+    let mut inside_code = false;
+
+    for (index, line) in content.lines().enumerate() {
+        if markdown::is_code_fence(line) {
+            inside_code = !inside_code;
+            continue;
+        }
+        if inside_code {
+            continue;
+        }
+        if let Some(level) = markdown::heading_level(line) {
+            headings.retain(|(open_level, _)| *open_level < level);
+            if level > 1 {
+                headings.push((level, line.trim_end().to_string()));
+            }
+            continue;
+        }
+        if let Some(todo) = Todo::parse(line) {
+            todos.push(VaultTodo {
+                note: note.to_path_buf(),
+                line: index + 1,
+                headings: headings
+                    .iter()
+                    .map(|(_, heading)| heading.clone())
+                    .collect(),
+                todo,
+            });
+        }
+    }
+    todos
 }
 
 fn is_visible(entry: &DirEntry) -> bool {
@@ -262,6 +288,35 @@ mod tests {
                 ("Projects/Garden/Garden.md".to_string(), 4, "Buy seeds"),
             ]
         );
+    }
+
+    #[test]
+    fn remembers_the_headings_a_todo_sits_under() {
+        let directory = vault_with(&[(
+            "Garden.md",
+            "# Garden\n## Running\n### Spring\n- [ ] Rake\n## Todo\n- [ ] Buy seeds\n",
+        )]);
+
+        let todos = Vault::new(directory.path()).todos().unwrap();
+
+        assert_eq!(todos[0].headings, vec!["## Running", "### Spring"]);
+        assert_eq!(todos[1].headings, vec!["## Todo"]);
+    }
+
+    #[test]
+    fn ignores_todos_and_headings_inside_code_blocks() {
+        let directory = vault_with(&[(
+            "Notes.md",
+            "## Todo\n```markdown\n## Example\n- [ ] not a real todo\n```\n- [ ] real todo\n",
+        )]);
+
+        let todos = Vault::new(directory.path()).todos().unwrap();
+
+        assert_eq!(
+            locations(&todos),
+            vec![("Notes.md".to_string(), 6, "real todo")]
+        );
+        assert_eq!(todos[0].headings, vec!["## Todo"]);
     }
 
     #[test]

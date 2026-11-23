@@ -9,7 +9,7 @@ static MARKDOWN_LINK: LazyLock<Regex> =
 
 const RESET: &str = "\x1b[0m";
 const MAGENTA: &str = "\x1b[35m";
-const BOLD_RED: &str = "\x1b[1;31m";
+const BOLD: &str = "\x1b[1m";
 const RED: &str = "\x1b[31m";
 const YELLOW: &str = "\x1b[33m";
 const DIM: &str = "\x1b[2m";
@@ -36,8 +36,8 @@ impl Style {
         self.paint(MAGENTA, text)
     }
 
-    pub fn checkbox(&self, done: bool) -> String {
-        self.paint(BOLD_RED, if done { "- [x]" } else { "- [ ]" })
+    pub fn subheading(&self, text: &str) -> String {
+        self.paint(BOLD, text)
     }
 
     pub fn links(&self, text: &str) -> String {

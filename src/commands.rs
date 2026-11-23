@@ -38,9 +38,19 @@ fn note_title(found: &VaultTodo) -> String {
 }
 
 fn title_of(note: &Path) -> String {
-    note.file_stem()
+    let stem = note
+        .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let folder = note
+        .parent()
+        .and_then(Path::file_name)
+        .map(|folder| folder.to_string_lossy().into_owned());
+
+    match folder {
+        Some(folder) if folder != stem => format!("{folder}/{stem}"),
+        _ => stem,
+    }
 }
 
 fn in_notes_matching<'a>(todos: Vec<&'a VaultTodo>, query: Option<&str>) -> Vec<&'a VaultTodo> {
