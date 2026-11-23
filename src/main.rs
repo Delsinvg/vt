@@ -1,11 +1,19 @@
+mod cli;
+mod commands;
+mod output;
+mod select;
 mod todo;
 mod vault;
 
 use std::env;
-use std::io;
+use std::io::{self, IsTerminal};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use clap::Parser;
+
+use cli::{Cli, Command};
+use output::Style;
 use vault::Vault;
 
 const MISSING_VAULT: &str =
@@ -18,7 +26,7 @@ fn vault_root() -> io::Result<PathBuf> {
 }
 
 fn main() -> ExitCode {
-    match run() {
+    match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("vt: {error}");
@@ -27,19 +35,16 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> io::Result<()> {
+fn run(cli: Cli) -> io::Result<()> {
     let vault = Vault::new(vault_root()?);
+    let mut out = io::stdout().lock();
+    let style = Style {
+        terminal: out.is_terminal(),
+    };
 
-    for found in vault.todos()? {
-        if !found.todo.done {
-            println!(
-                "{}:{}  {}",
-                found.note.display(),
-                found.line,
-                found.todo.text
-            );
+    match cli.command {
+        Command::Todo { project } => {
+            commands::list_todos(&vault.todos()?, project.as_deref(), style, &mut out)
         }
     }
-
-    Ok(())
 }
