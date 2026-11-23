@@ -4,7 +4,7 @@ use chrono::{Datelike, Days, Months, NaiveDate, Weekday};
 
 mod vocabulary;
 
-use vocabulary::{Keyword, keyword};
+use vocabulary::{Keyword, keyword, means_no_date};
 
 const WORKWEEK_END: Weekday = Weekday::Fri;
 
@@ -21,6 +21,8 @@ impl fmt::Display for UnknownDate {
     }
 }
 
+impl std::error::Error for UnknownDate {}
+
 pub fn parse_date(input: &str, today: NaiveDate) -> Result<NaiveDate, UnknownDate> {
     let word = normalize(input);
 
@@ -29,6 +31,13 @@ pub fn parse_date(input: &str, today: NaiveDate) -> Result<NaiveDate, UnknownDat
         .or_else(|| day_and_month(input, today))
         .or_else(|| NaiveDate::parse_from_str(input, "%Y-%m-%d").ok())
         .ok_or_else(|| UnknownDate(input.to_string()))
+}
+
+pub fn parse_due(input: &str, today: NaiveDate) -> Result<Option<NaiveDate>, UnknownDate> {
+    if means_no_date(&normalize(input)) {
+        return Ok(None);
+    }
+    parse_date(input, today).map(Some)
 }
 
 fn normalize(input: &str) -> String {
@@ -163,6 +172,15 @@ mod tests {
         assert!(on_friday("31/02").is_err());
         assert!(on_friday("2026-02-30").is_err());
         assert!(on_friday("someday").is_err());
+    }
+
+    #[test]
+    fn none_or_geen_means_no_due_date() {
+        let friday = date(FRIDAY.0, FRIDAY.1, FRIDAY.2);
+
+        assert_eq!(parse_due("none", friday), Ok(None));
+        assert_eq!(parse_due("geen", friday), Ok(None));
+        assert_eq!(parse_due("tomorrow", friday), Ok(Some(date(2026, 11, 21))));
     }
 
     #[test]

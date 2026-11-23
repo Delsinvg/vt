@@ -31,4 +31,30 @@ pub enum Command {
         )]
         words: Vec<String>,
     },
+
+    #[command(
+        about = "Check off a todo; without a search term you pick from a list",
+        after_help = "Examples:\n  vt tick milk\n  vt tick"
+    )]
+    Tick {
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            help = "Part of the todo text (typos allowed)"
+        )]
+        query: Vec<String>,
+    },
+
+    #[command(
+        about = "Set, change or clear the due date of a todo",
+        after_help = "Examples:\n  vt due milk @friday\n  vt due plumber @none\n  vt due          (pick a todo, then type a date)"
+    )]
+    Due {
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            help = "Part of the todo text, optionally followed by @date or @none"
+        )]
+        words: Vec<String>,
+    },
 }

@@ -6,6 +6,8 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::todo::Todo;
 
+const CHANGED_SINCE_READ: &str = "the note changed while vt was running; run the command again";
+
 #[derive(Debug, PartialEq)]
 pub struct VaultTodo {
     pub note: PathBuf,
@@ -48,6 +50,25 @@ impl Vault {
 
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
         writeln!(file, "{separator}{line}")
+    }
+
+    pub fn replace_todo(&self, found: &VaultTodo, updated: &Todo) -> io::Result<()> {
+        let path = self.root.join(&found.note);
+        let content = fs::read_to_string(&path)?;
+        let mut lines: Vec<&str> = content.split('\n').collect();
+        let index = found.line - 1;
+
+        let current = lines
+            .get(index)
+            .copied()
+            .filter(|line| Todo::parse(line).as_ref() == Some(&found.todo))
+            .ok_or_else(|| io::Error::other(CHANGED_SINCE_READ))?;
+
+        let indentation = &current[..current.len() - current.trim_start().len()];
+        let replacement = format!("{indentation}{}", updated.render());
+        lines[index] = &replacement;
+
+        fs::write(path, lines.join("\n"))
     }
 
     fn notes(&self) -> io::Result<Vec<PathBuf>> {
@@ -194,5 +215,57 @@ mod tests {
     #[test]
     fn creates_the_note_when_it_does_not_exist() {
         assert_eq!(appended(None), "- [ ] Call the plumber\n");
+    }
+
+    const GARDEN: &str = "# Garden\n\n- [ ] Water the plants\n\t- [ ] Buy a hose\n\t\t- details\n";
+
+    fn replaced(
+        content: &str,
+        line_text: &str,
+        update: impl FnOnce(&mut Todo),
+    ) -> io::Result<String> {
+        let directory = vault_with(&[("Garden.md", content)]);
+        let vault = Vault::new(directory.path());
+        let found = vault
+            .todos()
+            .unwrap()
+            .into_iter()
+            .find(|found| found.todo.text == line_text)
+            .unwrap();
+
+        let mut updated = found.todo.clone();
+        update(&mut updated);
+        vault.replace_todo(&found, &updated)?;
+        Ok(fs::read_to_string(directory.path().join("Garden.md")).unwrap())
+    }
+
+    #[test]
+    fn replaces_only_the_chosen_todo() {
+        assert_eq!(
+            replaced(GARDEN, "Water the plants", |todo| todo.done = true).unwrap(),
+            "# Garden\n\n- [x] Water the plants\n\t- [ ] Buy a hose\n\t\t- details\n"
+        );
+    }
+
+    #[test]
+    fn keeps_the_indentation_of_a_nested_todo() {
+        assert_eq!(
+            replaced(GARDEN, "Buy a hose", |todo| todo.done = true).unwrap(),
+            "# Garden\n\n- [ ] Water the plants\n\t- [x] Buy a hose\n\t\t- details\n"
+        );
+    }
+
+    #[test]
+    fn refuses_when_the_line_changed_in_the_meantime() {
+        let directory = vault_with(&[("Garden.md", GARDEN)]);
+        let vault = Vault::new(directory.path());
+        let found = vault.todos().unwrap().remove(0);
+        fs::write(
+            directory.path().join("Garden.md"),
+            "# Garden\n\nsomething else\n",
+        )
+        .unwrap();
+
+        assert!(vault.replace_todo(&found, &found.todo).is_err());
     }
 }

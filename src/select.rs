@@ -2,11 +2,19 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 
 pub fn matching<'a>(candidates: &[&'a str], query: &str) -> Vec<&'a str> {
+    matching_positions(candidates, query)
+        .into_iter()
+        .map(|position| candidates[position])
+        .collect()
+}
+
+pub fn matching_positions(candidates: &[&str], query: &str) -> Vec<usize> {
     let wanted = query.to_lowercase();
-    let containing: Vec<&str> = candidates
-        .iter()
-        .copied()
-        .filter(|candidate| candidate.to_lowercase().contains(&wanted))
+    let positions = 0..candidates.len();
+
+    let containing: Vec<usize> = positions
+        .clone()
+        .filter(|&position| candidates[position].to_lowercase().contains(&wanted))
         .collect();
 
     if !containing.is_empty() {
@@ -14,10 +22,8 @@ pub fn matching<'a>(candidates: &[&'a str], query: &str) -> Vec<&'a str> {
     }
 
     let matcher = SkimMatcherV2::default();
-    candidates
-        .iter()
-        .copied()
-        .filter(|candidate| matcher.fuzzy_match(candidate, query).is_some())
+    positions
+        .filter(|&position| matcher.fuzzy_match(candidates[position], query).is_some())
         .collect()
 }
 

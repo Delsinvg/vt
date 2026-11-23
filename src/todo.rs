@@ -4,7 +4,7 @@ const DUE_MARKER: &str = "📅";
 const COMPLETED_MARKER: &str = "✅";
 const DATE_FORMAT: &str = "%Y-%m-%d";
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Todo {
     pub text: String,
     pub done: bool,
@@ -24,6 +24,21 @@ impl Todo {
             due,
             completed,
         })
+    }
+
+    pub fn render(&self) -> String {
+        let checkbox = if self.done { "- [x]" } else { "- [ ]" };
+        let mut line = format!("{checkbox} {}", self.text);
+        if let Some(due) = self.due {
+            line.push_str(&format!(" {DUE_MARKER} {}", due.format(DATE_FORMAT)));
+        }
+        if let Some(completed) = self.completed {
+            line.push_str(&format!(
+                " {COMPLETED_MARKER} {}",
+                completed.format(DATE_FORMAT)
+            ));
+        }
+        line
     }
 }
 
@@ -133,5 +148,32 @@ mod tests {
     #[test]
     fn an_unknown_checkbox_mark_is_not_a_todo() {
         assert_eq!(Todo::parse("- [?] unsure"), None);
+    }
+
+    #[test]
+    fn renders_an_open_todo() {
+        assert_eq!(open_todo("Buy milk").render(), "- [ ] Buy milk");
+    }
+
+    #[test]
+    fn renders_the_dates_in_the_order_they_are_read() {
+        let todo = Todo {
+            text: "Call the plumber".to_string(),
+            done: true,
+            due: Some(date(2026, 11, 27)),
+            completed: Some(date(2026, 11, 25)),
+        };
+
+        assert_eq!(
+            todo.render(),
+            "- [x] Call the plumber 📅 2026-11-27 ✅ 2026-11-25"
+        );
+    }
+
+    #[test]
+    fn rendering_and_parsing_give_back_the_same_todo() {
+        let line = "- [x] Review [shop!12](https://gitlab.com/acme/shop/-/merge_requests/12) 📅 2026-12-04 ✅ 2026-12-01";
+
+        assert_eq!(Todo::parse(line).unwrap().render(), line);
     }
 }

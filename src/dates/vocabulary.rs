@@ -18,6 +18,7 @@ struct Vocabulary {
     next_week: &'static str,
     this_month: &'static str,
     next_month: &'static str,
+    no_date: &'static str,
     weekdays: [&'static str; 7],
 }
 
@@ -29,6 +30,7 @@ const ENGLISH: Vocabulary = Vocabulary {
     next_week: "nextweek",
     this_month: "thismonth",
     next_month: "nextmonth",
+    no_date: "none",
     weekdays: [
         "monday",
         "tuesday",
@@ -48,6 +50,7 @@ const DUTCH: Vocabulary = Vocabulary {
     next_week: "volgendeweek",
     this_month: "dezemaand",
     next_month: "volgendemaand",
+    no_date: "geen",
     weekdays: [
         "maandag",
         "dinsdag",
@@ -98,4 +101,8 @@ impl Vocabulary {
 
 pub(super) fn keyword(word: &str) -> Option<Keyword> {
     LANGUAGES.iter().find_map(|language| language.keyword(word))
+}
+
+pub(super) fn means_no_date(word: &str) -> bool {
+    LANGUAGES.iter().any(|language| language.no_date == word)
 }
