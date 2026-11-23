@@ -1,13 +1,13 @@
 mod cli;
 mod commands;
+mod config;
+mod dates;
 mod output;
 mod select;
 mod todo;
 mod vault;
 
-use std::env;
 use std::io::{self, IsTerminal};
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -15,15 +15,6 @@ use clap::Parser;
 use cli::{Cli, Command};
 use output::Style;
 use vault::Vault;
-
-const MISSING_VAULT: &str =
-    "VAULT is not set. Point it to your notes, e.g. export VAULT=\"$HOME/Documents/notes\"";
-
-fn vault_root() -> io::Result<PathBuf> {
-    env::var_os("VAULT")
-        .map(PathBuf::from)
-        .ok_or_else(|| io::Error::other(MISSING_VAULT))
-}
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
@@ -36,7 +27,7 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> io::Result<()> {
-    let vault = Vault::new(vault_root()?);
+    let vault = Vault::new(config::vault_root()?);
     let mut out = io::stdout().lock();
     let style = Style {
         terminal: out.is_terminal(),
