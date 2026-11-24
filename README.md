@@ -43,9 +43,17 @@ Garden
 
 ## Install
 
-`vt` is written in Rust. It is built and tested on macOS and should work on Linux. It needs `git` on your `PATH` for project detection.
+`vt` is built and tested on macOS and should work on Linux. It needs `git` on your `PATH` for project detection.
 
-With Rust installed ([rustup.rs](https://rustup.rs)):
+With [Homebrew](https://brew.sh), on macOS or Linux:
+
+```sh
+brew install delsinvg/tap/vt
+```
+
+`brew upgrade vt` picks up new releases.
+
+Or build it yourself with Rust ([rustup.rs](https://rustup.rs)):
 
 ```sh
 cargo install --git https://github.com/Delsinvg/vt
@@ -222,3 +230,7 @@ cargo fmt                     # formatting
 | `commands/*` | one file per kind of command |
 
 Tests use temporary folders and repositories with made-up notes; they never touch your own.
+
+## License
+
+[MIT](LICENSE)
