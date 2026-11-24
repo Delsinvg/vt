@@ -1,8 +1,11 @@
 use std::io;
 
-use inquire::{InquireError, MultiSelect, Select, Text};
+use inquire::list_option::ListOption;
+use inquire::validator::Validation;
+use inquire::{CustomUserError, InquireError, MultiSelect, Select, Text};
 
 const PICK_MANY_HELP: &str = "type to filter, space to select, enter to confirm, esc to cancel";
+const NOTHING_SELECTED: &str = "press space to select a todo first, or esc to cancel";
 const PICK_ONE_HELP: &str = "type to filter, enter to choose, esc to cancel";
 const DATE_HELP: &str =
     "tomorrow, friday, nextweek, thismonth, 25/11, 2026-12-01 or none (Dutch works too)";
@@ -26,6 +29,7 @@ impl Prompt for TerminalPrompt {
     fn pick_many(&mut self, question: &str, options: Vec<String>) -> io::Result<Vec<usize>> {
         let picked = MultiSelect::new(question, options)
             .with_help_message(PICK_MANY_HELP)
+            .with_validator(at_least_one_selected::<String>)
             .raw_prompt()
             .map(|chosen| chosen.into_iter().map(|option| option.index).collect());
         empty_when_cancelled(picked)
@@ -45,6 +49,14 @@ impl Prompt for TerminalPrompt {
             .prompt()
             .map(Some);
         empty_when_cancelled(answer)
+    }
+}
+
+fn at_least_one_selected<T>(selected: &[ListOption<&T>]) -> Result<Validation, CustomUserError> {
+    if selected.is_empty() {
+        Ok(Validation::Invalid(NOTHING_SELECTED.into()))
+    } else {
+        Ok(Validation::Valid)
     }
 }
 
@@ -107,5 +119,29 @@ impl Prompt for ScriptedPrompt {
 
     fn ask_date(&mut self) -> io::Result<Option<String>> {
         Ok(self.date.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use inquire::validator::ErrorMessage;
+
+    #[test]
+    fn confirming_without_a_selection_is_refused() {
+        assert_eq!(
+            at_least_one_selected::<String>(&[]).unwrap(),
+            Validation::Invalid(ErrorMessage::Custom(NOTHING_SELECTED.to_string()))
+        );
+    }
+
+    #[test]
+    fn confirming_a_selection_is_accepted() {
+        let milk = "Buy milk".to_string();
+
+        assert_eq!(
+            at_least_one_selected(&[ListOption::new(0, &milk)]).unwrap(),
+            Validation::Valid
+        );
     }
 }
