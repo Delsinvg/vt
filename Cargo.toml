@@ -2,6 +2,11 @@
 name = "vt"
 version = "0.1.0"
 edition = "2024"
+description = "Todos in your Markdown notes, from the terminal"
+license = "MIT"
+repository = "https://github.com/Delsinvg/vt"
+homepage = "https://github.com/Delsinvg/vt"
+readme = "README.md"
 
 [dependencies]
 chrono = "0.4.45"
