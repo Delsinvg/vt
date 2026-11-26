@@ -2,7 +2,7 @@ use std::error::Error;
 use std::io::Write;
 
 use super::choose::{choose, choose_project};
-use super::{open_todos, plain, title_of};
+use super::{bottom_up, open_todos, plain, title_of};
 use crate::config::Layout;
 use crate::picker::Prompt;
 use crate::vault::{Vault, VaultTodo};
@@ -29,12 +29,8 @@ pub fn move_todos(
     };
     let title = title_of(destination);
 
-    let mut bottom_up: Vec<(usize, &VaultTodo)> = chosen.into_iter().enumerate().collect();
-    bottom_up
-        .sort_by(|(_, left), (_, right)| (&right.note, right.line).cmp(&(&left.note, left.line)));
-
     let mut reports = Vec::new();
-    for (order, found) in bottom_up {
+    for (order, found) in bottom_up(chosen) {
         let text = plain(&found.todo.text);
         let report = if found.note == *destination {
             format!("Already in {title}: {text}")

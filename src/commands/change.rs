@@ -4,9 +4,10 @@ use std::io::Write;
 use chrono::NaiveDate;
 
 use super::choose::choose;
-use super::{open_todos, plain};
+use super::{bottom_up, open_todos, plain};
 use crate::dates::{Calendar, parse_due};
 use crate::picker::Prompt;
+use crate::recurrence::Recurrence;
 use crate::todo::Todo;
 use crate::vault::{Vault, VaultTodo};
 
@@ -26,16 +27,57 @@ pub fn tick(
         return Ok(());
     }
 
-    for found in chosen {
+    let mut reports = Vec::new();
+    for (order, found) in bottom_up(chosen) {
         let checked = Todo {
             done: true,
             completed: Some(today),
             ..found.todo.clone()
         };
-        vault.replace_todo(found, &checked)?;
-        writeln!(out, "Checked off: {}", plain(&found.todo.text))?;
+        let text = plain(&found.todo.text);
+        let report = match repetition_of(&found.todo, today) {
+            Repetition::None => {
+                vault.replace_todo(found, &checked)?;
+                format!("Checked off: {text}")
+            }
+            Repetition::Next(due) => {
+                let next = Todo {
+                    due: Some(due),
+                    ..found.todo.clone()
+                };
+                vault.check_off_and_repeat(found, &checked, &next)?;
+                format!("Checked off: {text}, again on {due}")
+            }
+            Repetition::NotUnderstood(rule) => {
+                vault.replace_todo(found, &checked)?;
+                format!("Checked off: {text}, but not repeated: vt does not understand '🔁 {rule}'")
+            }
+        };
+        reports.push((order, report));
+    }
+
+    reports.sort();
+    for (_, report) in reports {
+        writeln!(out, "{report}")?;
     }
     Ok(())
+}
+
+enum Repetition<'a> {
+    None,
+    Next(NaiveDate),
+    NotUnderstood(&'a str),
+}
+
+fn repetition_of(todo: &Todo, today: NaiveDate) -> Repetition<'_> {
+    let Some(rule) = todo.recurrence.as_deref() else {
+        return Repetition::None;
+    };
+    let counted_from = todo.due.unwrap_or(today);
+    match Recurrence::parse(rule).and_then(|repeat| repeat.next_due(counted_from, today)) {
+        Some(due) => Repetition::Next(due),
+        None => Repetition::NotUnderstood(rule),
+    }
 }
 
 pub fn set_due(
@@ -109,8 +151,12 @@ mod tests {
 
     impl Scenario {
         fn new() -> Self {
+            Self::with_inbox(INBOX)
+        }
+
+        fn with_inbox(content: &str) -> Self {
             let directory = TempDir::new().unwrap();
-            fs::write(directory.path().join("Inbox.md"), INBOX).unwrap();
+            fs::write(directory.path().join("Inbox.md"), content).unwrap();
             let vault = Vault::new(directory.path());
             Self {
                 directory,
@@ -182,6 +228,135 @@ mod tests {
             .unwrap();
 
         assert_eq!(scenario.inbox().matches("- [x]").count(), 2);
+    }
+
+    #[test]
+    fn tick_puts_the_next_occurrence_above_a_recurring_todo() {
+        let mut scenario =
+            Scenario::with_inbox("# Inbox\n\n- [ ] Weekly report 🔁 every week 📅 2026-11-20\n");
+
+        scenario
+            .tick("report", &mut ScriptedPrompt::non_interactive())
+            .unwrap();
+
+        assert_eq!(
+            scenario.inbox(),
+            "# Inbox\n\n\
+             - [ ] Weekly report 🔁 every week 📅 2026-11-27\n\
+             - [x] Weekly report 🔁 every week 📅 2026-11-20 ✅ 2026-11-20\n"
+        );
+        assert_eq!(
+            scenario.printed(),
+            "Checked off: Weekly report, again on 2026-11-27\n"
+        );
+    }
+
+    #[test]
+    fn tick_repeats_the_details_with_their_checkboxes_open_again() {
+        let mut scenario = Scenario::with_inbox(
+            "# Inbox\n\n\
+             - [ ] Month close 🔁 every month on the last 📅 2026-11-30\n\
+             \t- [x] Check the invoices ✅ 2026-11-19\n\
+             \t- send the hours\n\
+             - [ ] Buy milk\n",
+        );
+
+        scenario
+            .tick("month close", &mut ScriptedPrompt::non_interactive())
+            .unwrap();
+
+        assert_eq!(
+            scenario.inbox(),
+            "# Inbox\n\n\
+             - [ ] Month close 🔁 every month on the last 📅 2026-12-31\n\
+             \t- [ ] Check the invoices\n\
+             \t- send the hours\n\
+             - [x] Month close 🔁 every month on the last 📅 2026-11-30 ✅ 2026-11-20\n\
+             \t- [x] Check the invoices ✅ 2026-11-19\n\
+             \t- send the hours\n\
+             - [ ] Buy milk\n"
+        );
+    }
+
+    #[test]
+    fn tick_keeps_the_indentation_of_a_nested_recurring_todo() {
+        let mut scenario = Scenario::with_inbox(
+            "# Inbox\n\n- [ ] Garden\n\t- [ ] Water the plants 🔁 every day 📅 2026-11-20\n",
+        );
+
+        scenario
+            .tick("water", &mut ScriptedPrompt::non_interactive())
+            .unwrap();
+
+        assert_eq!(
+            scenario.inbox(),
+            "# Inbox\n\n- [ ] Garden\n\
+             \t- [ ] Water the plants 🔁 every day 📅 2026-11-21\n\
+             \t- [x] Water the plants 🔁 every day 📅 2026-11-20 ✅ 2026-11-20\n"
+        );
+    }
+
+    #[test]
+    fn tick_counts_a_recurring_todo_without_due_date_from_today() {
+        let mut scenario =
+            Scenario::with_inbox("# Inbox\n\n- [ ] Water the plants 🔁 every 3 days\n");
+
+        scenario
+            .tick("water", &mut ScriptedPrompt::non_interactive())
+            .unwrap();
+
+        assert!(
+            scenario
+                .inbox()
+                .contains("- [ ] Water the plants 🔁 every 3 days 📅 2026-11-23\n")
+        );
+    }
+
+    #[test]
+    fn tick_only_checks_off_a_recurrence_it_does_not_understand() {
+        let mut scenario = Scenario::with_inbox(
+            "# Inbox\n\n- [ ] Go to the gym 🔁 every monday and thursday 📅 2026-11-19\n",
+        );
+
+        scenario
+            .tick("gym", &mut ScriptedPrompt::non_interactive())
+            .unwrap();
+
+        assert_eq!(
+            scenario.inbox(),
+            "# Inbox\n\n- [x] Go to the gym 🔁 every monday and thursday 📅 2026-11-19 ✅ 2026-11-20\n"
+        );
+        assert_eq!(
+            scenario.printed(),
+            "Checked off: Go to the gym, but not repeated: vt does not understand '🔁 every monday and thursday'\n"
+        );
+    }
+
+    #[test]
+    fn tick_repeats_several_picked_todos_and_reports_them_in_picked_order() {
+        let mut scenario = Scenario::with_inbox(
+            "# Inbox\n\n\
+             - [ ] Water the plants 🔁 every day 📅 2026-11-20\n\
+             - [ ] Weekly report 🔁 every week 📅 2026-11-20\n",
+        );
+
+        scenario
+            .tick("", &mut ScriptedPrompt::picking(vec![0, 1], None, true))
+            .unwrap();
+
+        assert_eq!(
+            scenario.inbox(),
+            "# Inbox\n\n\
+             - [ ] Water the plants 🔁 every day 📅 2026-11-21\n\
+             - [x] Water the plants 🔁 every day 📅 2026-11-20 ✅ 2026-11-20\n\
+             - [ ] Weekly report 🔁 every week 📅 2026-11-27\n\
+             - [x] Weekly report 🔁 every week 📅 2026-11-20 ✅ 2026-11-20\n"
+        );
+        assert_eq!(
+            scenario.printed(),
+            "Checked off: Water the plants, again on 2026-11-21\n\
+             Checked off: Weekly report, again on 2026-11-27\n"
+        );
     }
 
     #[test]

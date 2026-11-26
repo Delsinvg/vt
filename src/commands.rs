@@ -38,6 +38,13 @@ pub fn owned_by(todos: Vec<VaultTodo>, layout: &Layout, owner: Owner) -> Vec<Vau
         .collect()
 }
 
+fn bottom_up(chosen: Vec<&VaultTodo>) -> Vec<(usize, &VaultTodo)> {
+    let mut ordered: Vec<_> = chosen.into_iter().enumerate().collect();
+    ordered
+        .sort_by(|(_, left), (_, right)| (&right.note, right.line).cmp(&(&left.note, left.line)));
+    ordered
+}
+
 fn open_todos(todos: &[VaultTodo]) -> Vec<&VaultTodo> {
     todos.iter().filter(|found| !found.todo.done).collect()
 }

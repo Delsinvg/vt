@@ -22,14 +22,19 @@ pub fn has_section(content: &str, heading: &str) -> bool {
     content.lines().any(|line| line.trim_end() == heading)
 }
 
-pub fn take_block(lines: &mut Vec<String>, index: usize) -> Vec<String> {
+pub fn block_end(lines: &[String], index: usize) -> usize {
     let indentation = indentation_of(&lines[index]);
-    let end = (index + 1..lines.len())
+    (index + 1..lines.len())
         .find(|&position| {
             let line = &lines[position];
             line.trim().is_empty() || indentation_of(line) <= indentation
         })
-        .unwrap_or(lines.len());
+        .unwrap_or(lines.len())
+}
+
+pub fn take_block(lines: &mut Vec<String>, index: usize) -> Vec<String> {
+    let indentation = indentation_of(&lines[index]);
+    let end = block_end(lines, index);
 
     lines
         .drain(index..end)

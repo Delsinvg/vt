@@ -98,11 +98,35 @@ impl Vault {
             .filter(|line| Todo::parse(line).as_ref() == Some(&found.todo))
             .ok_or_else(|| io::Error::other(CHANGED_SINCE_READ))?;
 
-        let indentation = &current[..current.len() - current.trim_start().len()];
+        let indentation = leading_whitespace(current);
         let replacement = format!("{indentation}{}", updated.render());
         lines[index] = &replacement;
 
         fs::write(path, lines.join("\n"))
+    }
+
+    pub fn check_off_and_repeat(
+        &self,
+        found: &VaultTodo,
+        checked: &Todo,
+        next: &Todo,
+    ) -> io::Result<()> {
+        let mut lines = self.lines_of(&found.note)?;
+        let index = found.line - 1;
+        let current = lines
+            .get(index)
+            .filter(|line| Todo::parse(line).as_ref() == Some(&found.todo))
+            .ok_or_else(|| io::Error::other(CHANGED_SINCE_READ))?;
+
+        let indentation = leading_whitespace(current).to_string();
+        let details = &lines[index + 1..markdown::block_end(&lines, index)];
+        let repeated: Vec<String> = std::iter::once(format!("{indentation}{}", next.render()))
+            .chain(details.iter().map(|line| reopened(line)))
+            .collect();
+
+        lines[index] = format!("{indentation}{}", checked.render());
+        lines.splice(index..index, repeated);
+        self.write_lines(&found.note, &lines)
     }
 
     pub fn notes_with_section(&self, heading: &str) -> io::Result<Vec<PathBuf>> {
@@ -191,6 +215,23 @@ impl Vault {
                 .any(|folder| relative.starts_with(folder))
         })
     }
+}
+
+fn leading_whitespace(line: &str) -> &str {
+    &line[..line.len() - line.trim_start().len()]
+}
+
+fn reopened(line: &str) -> String {
+    let Some(todo) = Todo::parse(line).filter(|todo| todo.done) else {
+        return line.to_string();
+    };
+    let indentation = leading_whitespace(line);
+    let open = Todo {
+        done: false,
+        completed: None,
+        ..todo
+    };
+    format!("{indentation}{}", open.render())
 }
 
 fn todos_in(note: &Path, content: &str) -> Vec<VaultTodo> {
