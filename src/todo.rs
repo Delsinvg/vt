@@ -2,33 +2,63 @@ use chrono::NaiveDate;
 
 const DUE_MARKER: &str = "📅";
 const COMPLETED_MARKER: &str = "✅";
+const RECURRENCE_MARKER: &str = "🔁";
 const DATE_FORMAT: &str = "%Y-%m-%d";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Todo {
     pub text: String,
     pub done: bool,
+    pub recurrence: Option<String>,
     pub due: Option<NaiveDate>,
     pub completed: Option<NaiveDate>,
 }
 
+enum Field<'a> {
+    Recurrence(&'a str),
+    Due(NaiveDate),
+    Completed(NaiveDate),
+}
+
 impl Todo {
     pub fn parse(line: &str) -> Option<Self> {
-        let (done, rest) = split_checkbox(line.trim_start())?;
-        let (rest, completed) = split_trailing_date(rest, COMPLETED_MARKER);
-        let (text, due) = split_trailing_date(rest, DUE_MARKER);
-
-        Some(Self {
-            text: text.to_string(),
+        let (done, mut text) = split_checkbox(line.trim_start())?;
+        let mut todo = Self {
+            text: String::new(),
             done,
-            due,
-            completed,
-        })
+            recurrence: None,
+            due: None,
+            completed: None,
+        };
+
+        while let Some((before, field)) = split_trailing_field(text)
+            && todo.fill(field)
+        {
+            text = before;
+        }
+
+        todo.text = text.to_string();
+        Some(todo)
+    }
+
+    fn fill(&mut self, field: Field) -> bool {
+        match field {
+            Field::Recurrence(rule) if self.recurrence.is_none() => {
+                self.recurrence = Some(rule.to_string());
+            }
+            Field::Due(date) if self.due.is_none() => self.due = Some(date),
+            Field::Completed(date) if self.completed.is_none() => self.completed = Some(date),
+            _ => return false,
+        }
+        true
     }
 
     pub fn render(&self) -> String {
         let checkbox = if self.done { "- [x]" } else { "- [ ]" };
         let mut line = format!("{checkbox} {}", self.text);
+        if let Some(rule) = &self.recurrence {
+            line.push_str(&format!(" {RECURRENCE_MARKER} {rule}"));
+        }
         if let Some(due) = self.due {
             line.push_str(&format!(" {DUE_MARKER} {}", due.format(DATE_FORMAT)));
         }
@@ -54,15 +84,25 @@ fn split_checkbox(line: &str) -> Option<(bool, &str)> {
     }
 }
 
-fn split_trailing_date<'a>(text: &'a str, marker: &str) -> (&'a str, Option<NaiveDate>) {
-    let Some((before, after)) = text.rsplit_once(marker) else {
-        return (text, None);
-    };
+fn split_trailing_field(text: &str) -> Option<(&str, Field<'_>)> {
+    let (position, marker) = [RECURRENCE_MARKER, DUE_MARKER, COMPLETED_MARKER]
+        .into_iter()
+        .filter_map(|marker| Some((text.rfind(marker)?, marker)))
+        .max()?;
+    let before = text[..position].trim_end();
+    let value = text[position + marker.len()..].trim();
 
-    match NaiveDate::parse_from_str(after.trim(), DATE_FORMAT) {
-        Ok(date) => (before.trim_end(), Some(date)),
-        Err(_) => (text, None),
-    }
+    let field = match marker {
+        RECURRENCE_MARKER if !value.is_empty() => Field::Recurrence(value),
+        DUE_MARKER => Field::Due(parse_date(value)?),
+        COMPLETED_MARKER => Field::Completed(parse_date(value)?),
+        _ => return None,
+    };
+    Some((before, field))
+}
+
+fn parse_date(value: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(value, DATE_FORMAT).ok()
 }
 
 #[cfg(test)]
@@ -77,6 +117,7 @@ mod tests {
         Todo {
             text: text.to_string(),
             done: false,
+            recurrence: None,
             due: None,
             completed: None,
         }
@@ -160,14 +201,58 @@ mod tests {
         let todo = Todo {
             text: "Call the plumber".to_string(),
             done: true,
+            recurrence: Some("every week".to_string()),
             due: Some(date(2026, 11, 27)),
             completed: Some(date(2026, 11, 25)),
         };
 
         assert_eq!(
             todo.render(),
-            "- [x] Call the plumber 📅 2026-11-27 ✅ 2026-11-25"
+            "- [x] Call the plumber 🔁 every week 📅 2026-11-27 ✅ 2026-11-25"
         );
+    }
+
+    #[test]
+    fn extracts_the_recurrence() {
+        let todo = Todo::parse("- [ ] Water the plants 🔁 every 3 days 📅 2026-11-27").unwrap();
+
+        assert_eq!(todo.text, "Water the plants");
+        assert_eq!(todo.recurrence.as_deref(), Some("every 3 days"));
+        assert_eq!(todo.due, Some(date(2026, 11, 27)));
+    }
+
+    #[test]
+    fn reads_the_fields_in_any_order() {
+        let todo = Todo::parse("- [x] Water the plants ✅ 2026-11-25 📅 2026-11-27 🔁 every week")
+            .unwrap();
+
+        assert_eq!(todo.text, "Water the plants");
+        assert_eq!(todo.recurrence.as_deref(), Some("every week"));
+        assert_eq!(todo.due, Some(date(2026, 11, 27)));
+        assert_eq!(todo.completed, Some(date(2026, 11, 25)));
+    }
+
+    #[test]
+    fn keeps_a_recurrence_it_does_not_understand() {
+        let line = "- [ ] Water the plants 🔁 every monday and thursday 📅 2026-11-27";
+
+        assert_eq!(Todo::parse(line).unwrap().render(), line);
+    }
+
+    #[test]
+    fn a_repeated_field_stays_in_the_text() {
+        let todo = Todo::parse("- [ ] Call 📅 2026-11-20 the plumber 📅 2026-11-27").unwrap();
+
+        assert_eq!(todo.text, "Call 📅 2026-11-20 the plumber");
+        assert_eq!(todo.due, Some(date(2026, 11, 27)));
+    }
+
+    #[test]
+    fn a_lone_recurrence_marker_is_text() {
+        let todo = Todo::parse("- [ ] Fix the 🔁").unwrap();
+
+        assert_eq!(todo.text, "Fix the 🔁");
+        assert_eq!(todo.recurrence, None);
     }
 
     #[test]

@@ -9,6 +9,7 @@ mod markdown;
 mod output;
 mod picker;
 mod project;
+mod recurrence;
 mod select;
 mod todo;
 mod vault;
