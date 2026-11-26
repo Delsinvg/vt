@@ -67,6 +67,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     let calendar = Calendar {
         today,
         week_ends_on: settings.week_ends_on,
+        month_ends_on: settings.month_ends_on,
     };
     let todos_of =
         |owner| -> io::Result<_> { Ok(commands::owned_by(vault.todos()?, &layout, owner)) };

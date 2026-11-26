@@ -1,4 +1,6 @@
-use chrono::{Datelike, Days, Months, NaiveDate};
+use chrono::{Datelike, Days, NaiveDate};
+
+use crate::dates::DayOfMonth;
 
 const MONTHS_PER_YEAR: u32 = 12;
 const DAYS_PER_WEEK: u32 = 7;
@@ -9,12 +11,6 @@ enum Unit {
     Week,
     Month,
     Year,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum DayOfMonth {
-    Fixed(u32),
-    Last,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -76,16 +72,9 @@ impl Recurrence {
     }
 
     fn months_later(&self, start: NaiveDate, months: u32) -> Option<NaiveDate> {
-        let first_of_month = start.with_day(1)?.checked_add_months(Months::new(months))?;
-        let last_of_month = first_of_month
-            .checked_add_months(Months::new(1))?
-            .pred_opt()?;
-        let wanted_day = match self.day_of_month {
-            None => start.day(),
-            Some(DayOfMonth::Fixed(day)) => day,
-            Some(DayOfMonth::Last) => last_of_month.day(),
-        };
-        first_of_month.with_day(wanted_day.min(last_of_month.day()))
+        self.day_of_month
+            .unwrap_or(DayOfMonth::Fixed(start.day()))
+            .months_after(start, months)
     }
 }
 
@@ -106,10 +95,7 @@ fn day_of_month(word: &str) -> Option<DayOfMonth> {
     let number = ["st", "nd", "rd", "th"]
         .iter()
         .find_map(|suffix| word.strip_suffix(suffix))?;
-    match number.parse() {
-        Ok(day @ 1..=31) => Some(DayOfMonth::Fixed(day)),
-        _ => None,
-    }
+    DayOfMonth::fixed(number.parse().ok()?)
 }
 
 #[cfg(test)]

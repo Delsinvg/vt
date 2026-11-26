@@ -7,11 +7,37 @@ mod vocabulary;
 use vocabulary::{Keyword, PeriodWord, keyword, means_no_date, period};
 
 pub const DEFAULT_WEEK_END: Weekday = Weekday::Fri;
+pub const DEFAULT_MONTH_END: DayOfMonth = DayOfMonth::Last;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DayOfMonth {
+    Fixed(u32),
+    Last,
+}
+
+impl DayOfMonth {
+    pub fn fixed(day: u32) -> Option<Self> {
+        (1..=31).contains(&day).then_some(Self::Fixed(day))
+    }
+
+    pub fn months_after(self, date: NaiveDate, months: u32) -> Option<NaiveDate> {
+        let first_of_month = date.with_day(1)?.checked_add_months(Months::new(months))?;
+        let last_of_month = first_of_month
+            .checked_add_months(Months::new(1))?
+            .pred_opt()?;
+        let day = match self {
+            Self::Fixed(day) => day.min(last_of_month.day()),
+            Self::Last => last_of_month.day(),
+        };
+        first_of_month.with_day(day)
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Calendar {
     pub today: NaiveDate,
     pub week_ends_on: Weekday,
+    pub month_ends_on: DayOfMonth,
 }
 
 #[cfg(test)]
@@ -20,6 +46,7 @@ impl Calendar {
         Self {
             today,
             week_ends_on: DEFAULT_WEEK_END,
+            month_ends_on: DEFAULT_MONTH_END,
         }
     }
 }
@@ -144,8 +171,8 @@ fn resolve(keyword: Keyword, calendar: &Calendar) -> Option<NaiveDate> {
         Keyword::NextWeek => {
             next_or_same(today, calendar.week_ends_on).checked_add_days(Days::new(7))
         }
-        Keyword::ThisMonth => last_day_of_month(today, 0),
-        Keyword::NextMonth => last_day_of_month(today, 1),
+        Keyword::ThisMonth => end_of_month(calendar, 0),
+        Keyword::NextMonth => end_of_month(calendar, 1),
         Keyword::On(day) => Some(next_after(today, day)),
     }
 }
@@ -159,11 +186,11 @@ fn next_after(today: NaiveDate, day: Weekday) -> NaiveDate {
     next_or_same(today + Days::new(1), day)
 }
 
-fn last_day_of_month(today: NaiveDate, months_ahead: u32) -> Option<NaiveDate> {
-    today
-        .with_day(1)?
-        .checked_add_months(Months::new(months_ahead + 1))?
-        .pred_opt()
+fn end_of_month(calendar: &Calendar, months_ahead: u32) -> Option<NaiveDate> {
+    let month_end = calendar.month_ends_on;
+    let this_month = month_end.months_after(calendar.today, 0)?;
+    let already_passed = u32::from(this_month < calendar.today);
+    month_end.months_after(calendar.today, months_ahead + already_passed)
 }
 
 fn day_and_month(input: &str, today: NaiveDate) -> Option<NaiveDate> {
@@ -229,6 +256,47 @@ mod tests {
         assert_eq!(on_friday("dezemaand"), Ok(date(2026, 11, 30)));
         assert_eq!(on_friday("nextmonth"), Ok(date(2026, 12, 31)));
         assert_eq!(on_friday("volgendemaand"), Ok(date(2026, 12, 31)));
+    }
+
+    #[test]
+    fn a_month_can_end_on_a_fixed_day() {
+        let calendar = Calendar {
+            month_ends_on: DayOfMonth::Fixed(25),
+            ..Calendar::on(date(2026, 11, 20))
+        };
+
+        assert_eq!(parse_date("thismonth", &calendar), Ok(date(2026, 11, 25)));
+        assert_eq!(parse_date("nextmonth", &calendar), Ok(date(2026, 12, 25)));
+    }
+
+    #[test]
+    fn a_month_end_that_has_passed_moves_to_the_next_month() {
+        let calendar = Calendar {
+            month_ends_on: DayOfMonth::Fixed(15),
+            ..Calendar::on(date(2026, 11, 20))
+        };
+
+        assert_eq!(parse_date("thismonth", &calendar), Ok(date(2026, 12, 15)));
+        assert_eq!(parse_date("nextmonth", &calendar), Ok(date(2027, 1, 15)));
+    }
+
+    #[test]
+    fn a_month_end_that_a_month_lacks_is_its_last_day() {
+        let calendar = Calendar {
+            month_ends_on: DayOfMonth::Fixed(31),
+            ..Calendar::on(date(2027, 2, 10))
+        };
+
+        assert_eq!(parse_date("thismonth", &calendar), Ok(date(2027, 2, 28)));
+        assert_eq!(parse_date("nextmonth", &calendar), Ok(date(2027, 3, 31)));
+    }
+
+    #[test]
+    fn a_day_of_the_month_lies_between_1_and_31() {
+        assert_eq!(DayOfMonth::fixed(0), None);
+        assert_eq!(DayOfMonth::fixed(1), Some(DayOfMonth::Fixed(1)));
+        assert_eq!(DayOfMonth::fixed(31), Some(DayOfMonth::Fixed(31)));
+        assert_eq!(DayOfMonth::fixed(32), None);
     }
 
     #[test]
@@ -371,8 +439,8 @@ mod tests {
     #[test]
     fn a_week_can_end_on_sunday() {
         let calendar = Calendar {
-            today: date(2026, 11, 20),
             week_ends_on: Weekday::Sun,
+            ..Calendar::on(date(2026, 11, 20))
         };
 
         assert_eq!(parse_date("thisweek", &calendar), Ok(date(2026, 11, 22)));

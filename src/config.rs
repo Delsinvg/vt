@@ -8,13 +8,14 @@ use std::path::{Path, PathBuf};
 use chrono::Weekday;
 use serde::Deserialize;
 
-use crate::dates::{DEFAULT_WEEK_END, weekday_named};
+use crate::dates::{DEFAULT_MONTH_END, DEFAULT_WEEK_END, DayOfMonth, weekday_named};
 
 const DEFAULT_INBOX: &str = "Inbox.md";
 const DEFAULT_SECTION: &str = "Todo";
 const DEFAULT_AGENT_SECTION: &str = "Agent";
 const VAULT_VARIABLE: &str = "VAULT";
 const HOME_PREFIX: &str = "~/";
+const LAST_DAY: &str = "last";
 
 #[derive(Debug)]
 pub struct Layout {
@@ -29,6 +30,7 @@ pub struct Settings {
     pub layout: Layout,
     pub ignored: Vec<PathBuf>,
     pub week_ends_on: Weekday,
+    pub month_ends_on: DayOfMonth,
     pub hook_instruction: Option<String>,
     pub source: PathBuf,
 }
@@ -67,7 +69,37 @@ struct ConfigFile {
     agent_section: Option<String>,
     ignore: Option<Vec<String>>,
     week_ends_on: Option<String>,
+    month_ends_on: Option<MonthEnd>,
     hook_instruction: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(
+    untagged,
+    expecting = "month_ends_on: use a day of the month from 1 to 31, or \"last\""
+)]
+enum MonthEnd {
+    Day(i64),
+    Word(String),
+}
+
+impl MonthEnd {
+    fn day_of_month(&self) -> Option<DayOfMonth> {
+        match self {
+            Self::Day(day) => DayOfMonth::fixed(u32::try_from(*day).ok()?),
+            Self::Word(word) if word == LAST_DAY => Some(DayOfMonth::Last),
+            Self::Word(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for MonthEnd {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Day(day) => write!(formatter, "{day}"),
+            Self::Word(word) => write!(formatter, "{word}"),
+        }
+    }
 }
 
 pub fn home() -> PathBuf {
@@ -107,6 +139,15 @@ fn load_from(
         })?,
         None => DEFAULT_WEEK_END,
     };
+    let month_ends_on = match file.month_ends_on {
+        Some(end) => end.day_of_month().ok_or_else(|| ConfigError {
+            path: path.to_path_buf(),
+            reason: format!(
+                "month_ends_on: '{end}' is not a day of the month; use 1 to 31 or \"{LAST_DAY}\""
+            ),
+        })?,
+        None => DEFAULT_MONTH_END,
+    };
     let ignored = file
         .ignore
         .unwrap_or_default()
@@ -123,6 +164,7 @@ fn load_from(
         },
         ignored,
         week_ends_on,
+        month_ends_on,
         hook_instruction: file.hook_instruction,
         source: path.to_path_buf(),
     })
@@ -237,6 +279,52 @@ mod tests {
         assert_eq!(settings.week_ends_on, Weekday::Fri);
         assert!(settings.ignored.is_empty());
         assert_eq!(settings.hook_instruction, None);
+    }
+
+    #[test]
+    fn a_month_ends_on_its_last_day_unless_configured() {
+        assert_eq!(
+            load_with(None, None).unwrap().month_ends_on,
+            DayOfMonth::Last
+        );
+        assert_eq!(
+            load_with(Some("month_ends_on = 25\n"), None)
+                .unwrap()
+                .month_ends_on,
+            DayOfMonth::Fixed(25)
+        );
+        assert_eq!(
+            load_with(Some("month_ends_on = \"last\"\n"), None)
+                .unwrap()
+                .month_ends_on,
+            DayOfMonth::Last
+        );
+    }
+
+    #[test]
+    fn a_month_end_that_is_not_a_day_of_the_month_is_an_error() {
+        for (value, shown) in [
+            ("0", "0"),
+            ("32", "32"),
+            ("-1", "-1"),
+            ("\"first\"", "first"),
+        ] {
+            let error = load_with(Some(&format!("month_ends_on = {value}\n")), None).unwrap_err();
+
+            assert!(
+                error.ends_with(&format!(
+                    "month_ends_on: '{shown}' is not a day of the month; use 1 to 31 or \"last\""
+                )),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_month_end_that_is_neither_a_number_nor_a_word_is_an_error() {
+        let error = load_with(Some("month_ends_on = 2.5\n"), None).unwrap_err();
+
+        assert!(error.ends_with("month_ends_on: use a day of the month from 1 to 31, or \"last\""));
     }
 
     #[test]
