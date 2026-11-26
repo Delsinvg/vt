@@ -9,6 +9,7 @@ use chrono::Weekday;
 use serde::Deserialize;
 
 use crate::dates::{DEFAULT_MONTH_END, DEFAULT_WEEK_END, weekday_named};
+use crate::opener::{FILE_PLACEHOLDER, LINE_PLACEHOLDER, Opener};
 use crate::recurrence::DayOfMonth;
 
 const DEFAULT_INBOX: &str = "Inbox.md";
@@ -32,6 +33,7 @@ pub struct Settings {
     pub ignored: Vec<PathBuf>,
     pub week_ends_on: Weekday,
     pub month_ends_on: DayOfMonth,
+    pub opener: Opener,
     pub hook_instruction: Option<String>,
     pub source: PathBuf,
 }
@@ -71,6 +73,7 @@ struct ConfigFile {
     ignore: Option<Vec<String>>,
     week_ends_on: Option<String>,
     month_ends_on: Option<MonthEnd>,
+    open_with: Option<String>,
     hook_instruction: Option<String>,
 }
 
@@ -149,6 +152,15 @@ fn load_from(
         })?,
         None => DEFAULT_MONTH_END,
     };
+    let opener = match file.open_with {
+        Some(template) => Opener::from_template(&template).ok_or_else(|| ConfigError {
+            path: path.to_path_buf(),
+            reason: format!(
+                "open_with: '{template}' does not say where the note goes; add {FILE_PLACEHOLDER}, e.g. \"nvim +{LINE_PLACEHOLDER} {FILE_PLACEHOLDER}\""
+            ),
+        })?,
+        None => Opener::Obsidian,
+    };
     let ignored = file
         .ignore
         .unwrap_or_default()
@@ -166,6 +178,7 @@ fn load_from(
         ignored,
         week_ends_on,
         month_ends_on,
+        opener,
         hook_instruction: file.hook_instruction,
         source: path.to_path_buf(),
     })
@@ -326,6 +339,26 @@ mod tests {
         let error = load_with(Some("month_ends_on = 2.5\n"), None).unwrap_err();
 
         assert!(error.ends_with("month_ends_on: use a day of the month from 1 to 31, or \"last\""));
+    }
+
+    #[test]
+    fn opens_in_obsidian_unless_a_command_is_configured() {
+        assert_eq!(load_with(None, None).unwrap().opener, Opener::Obsidian);
+        assert_eq!(
+            load_with(Some("open_with = \"zed {file}:{line}\"\n"), None)
+                .unwrap()
+                .opener,
+            Opener::from_template("zed {file}:{line}").unwrap()
+        );
+    }
+
+    #[test]
+    fn a_command_that_does_not_name_the_file_is_an_error() {
+        let error = load_with(Some("open_with = \"zed\"\n"), None).unwrap_err();
+
+        assert!(error.ends_with(
+            "open_with: 'zed' does not say where the note goes; add {file}, e.g. \"nvim +{line} {file}\""
+        ));
     }
 
     #[test]

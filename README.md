@@ -80,10 +80,13 @@ agent_section = "Agent"            # the "## " section for an AI agent's own tod
 ignore = ["Templates", "Archive"]  # folders, relative to the vault, that vt skips
 week_ends_on = "friday"            # the day @thisweek and @nextweek point to
 month_ends_on = "last"             # the day @thismonth and @nextmonth point to: "last" or 1 to 31
+open_with = "zed {file}:{line}"    # how vt open opens a note; Obsidian when left out
 hook_instruction = "..."           # what Claude Code does with the project note
 ```
 
 The `VAULT` environment variable overrides `vault`, which is handy for a quick test: `VAULT=~/test-notes vt todo`. Folders starting with a dot, such as `.obsidian` and `.trash`, are always skipped.
+
+`vt open` opens a note in Obsidian, at the heading the todo sits under. With `open_with` it runs your editor instead, at the todo's line: `{file}` becomes the note and `{line}` the line number, for example `"nvim +{line} {file}"`, `"zed {file}:{line}"` or `"code --goto {file}:{line}"`. The command runs without a shell, so a note with spaces in its name stays one argument.
 
 ## Your notes
 
@@ -145,7 +148,7 @@ The optional `repos:` list links the note to one or more git repositories. Insid
 | `vt tick [search]` | Check off a todo; without a search term you pick from a list. A repeating todo comes back with its next date |
 | `vt due [search] [@date]` | Set, change or clear (`@none`) a due date or repetition; asks for the date when you leave it out |
 | `vt move [search] [+project]` | Move a todo, with its details, into a project |
-| `vt open [search]` | Open the note of a todo in Obsidian, at the heading it sits under |
+| `vt open [search]` | Open the note of a todo in Obsidian at its heading, or in your editor at its line (`open_with`) |
 | `vt hook` | Print the project note for a Claude Code `SessionStart` hook |
 
 Search terms and project names forgive typos: `vt todo kitchn` finds the Kitchen note. When a search matches several todos, `vt` shows a list to pick from in a terminal, and refuses outside one, so scripts never act on the wrong todo.
@@ -266,6 +269,7 @@ cargo fmt                     # formatting
 | `links`, `output` | short link names, colors, clickable links |
 | `select`, `picker` | matching with typos, interactive lists |
 | `config` | `~/.config/vt/config.toml` |
+| `opener` | the command that opens a note: Obsidian or the `open_with` editor |
 | `commands/*` | one file per kind of command |
 
 Tests use temporary folders and repositories with made-up notes; they never touch your own.

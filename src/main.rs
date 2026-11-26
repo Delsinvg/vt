@@ -6,6 +6,7 @@ mod git;
 mod inbox;
 mod links;
 mod markdown;
+mod opener;
 mod output;
 mod picker;
 mod project;
@@ -110,6 +111,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             &vault,
             &todos_of(Owner::Me)?,
             &query.join(" "),
+            &settings.opener,
             &mut prompt,
             launch,
             &mut out,
@@ -148,17 +150,20 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn launch(uri: &str) -> io::Result<()> {
-    let opener = if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    let status = process::Command::new(opener).arg(uri).status()?;
+fn launch(command_line: &[String]) -> io::Result<()> {
+    let (program, arguments) = command_line
+        .split_first()
+        .ok_or_else(|| io::Error::other("open_with is empty"))?;
+    let status = process::Command::new(program)
+        .args(arguments)
+        .status()
+        .map_err(|error| io::Error::other(format!("could not start {program}: {error}")))?;
     if status.success() {
         Ok(())
     } else {
-        Err(io::Error::other(format!("{opener} could not open {uri}")))
+        Err(io::Error::other(format!(
+            "{program} could not open the note"
+        )))
     }
 }
 

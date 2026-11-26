@@ -201,6 +201,26 @@ fn a_todo_opens_in_obsidian_at_its_heading() {
 }
 
 #[test]
+fn a_configured_editor_opens_the_note_at_the_line_of_the_todo() {
+    let sandbox = Sandbox::new();
+    let opened = sandbox.fake_opener();
+    fs::create_dir(sandbox.path("config/vt")).unwrap();
+    fs::write(
+        sandbox.path("config/vt/config.toml"),
+        "open_with = \"open {file}:{line}\"\n",
+    )
+    .unwrap();
+    sandbox.note("Garden.md", "# Garden\n## Todo\n- [ ] Rake the leaves\n");
+
+    sandbox.vt(&["open", "rake"]);
+
+    assert_eq!(
+        fs::read_to_string(opened).unwrap(),
+        format!("{}:3", sandbox.path("vault/Garden.md").display())
+    );
+}
+
+#[test]
 fn the_agent_keeps_its_own_todos_apart() {
     let sandbox = Sandbox::new();
     sandbox.note(
