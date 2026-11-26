@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use super::plain;
@@ -6,10 +7,34 @@ use crate::picker::Prompt;
 use crate::select;
 use crate::vault::VaultTodo;
 
+const WHICH_TODO: &str = "Which todo?";
+
 pub(super) fn choose<'a>(
     open: &[&'a VaultTodo],
     query: &str,
     prompt: &mut impl Prompt,
+) -> Result<Vec<&'a VaultTodo>, Box<dyn Error>> {
+    choose_with(open, query, prompt, |prompt, options| {
+        prompt.pick_many(WHICH_TODO, options)
+    })
+}
+
+pub(super) fn choose_one<'a>(
+    open: &[&'a VaultTodo],
+    query: &str,
+    prompt: &mut impl Prompt,
+) -> Result<Option<&'a VaultTodo>, Box<dyn Error>> {
+    let chosen = choose_with(open, query, prompt, |prompt, options| {
+        Ok(prompt.pick_one(WHICH_TODO, options)?.into_iter().collect())
+    })?;
+    Ok(chosen.into_iter().next())
+}
+
+fn choose_with<'a, P: Prompt>(
+    open: &[&'a VaultTodo],
+    query: &str,
+    prompt: &mut P,
+    pick: impl FnOnce(&mut P, Vec<String>) -> io::Result<Vec<usize>>,
 ) -> Result<Vec<&'a VaultTodo>, Box<dyn Error>> {
     if open.is_empty() {
         return Err("there are no open todos".into());
@@ -45,7 +70,7 @@ pub(super) fn choose<'a>(
         .iter()
         .map(|&position| format!("{}  ({})", texts[position], open[position].note.display()))
         .collect();
-    let picked = prompt.pick_many("Which todo?", options)?;
+    let picked = pick(prompt, options)?;
 
     Ok(picked
         .into_iter()

@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -11,7 +12,7 @@ struct Sandbox {
 impl Sandbox {
     fn new() -> Self {
         let root = TempDir::new().unwrap();
-        for folder in ["config", "vault", "outside"] {
+        for folder in ["config", "vault", "outside", "bin"] {
             fs::create_dir(root.path().join(folder)).unwrap();
         }
         Self { root }
@@ -37,8 +38,28 @@ impl Sandbox {
             .env("HOME", self.root.path())
             .env("XDG_CONFIG_HOME", self.path("config"))
             .env("VAULT", self.path("vault"))
+            .env("PATH", self.search_path())
             .stdin(Stdio::null());
         command
+    }
+
+    fn search_path(&self) -> String {
+        format!(
+            "{}:{}",
+            self.path("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        )
+    }
+
+    fn fake_opener(&self) -> PathBuf {
+        let opened = self.path("opened");
+        let script = format!("#!/bin/sh\nprintf '%s' \"$1\" > '{}'\n", opened.display());
+        for name in ["open", "xdg-open"] {
+            let opener = self.path("bin").join(name);
+            fs::write(&opener, &script).unwrap();
+            fs::set_permissions(&opener, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        opened
     }
 
     fn run_in(&self, arguments: &[&str], directory: &Path) -> Output {
@@ -159,6 +180,23 @@ fn a_todo_moves_into_a_project_with_its_details() {
     assert_eq!(
         sandbox.read("Garden.md"),
         "# Garden\n## Todo\n\n- [ ] Buy a hose\n\t- the long one\n"
+    );
+}
+
+#[test]
+fn a_todo_opens_in_obsidian_at_its_heading() {
+    let sandbox = Sandbox::new();
+    let opened = sandbox.fake_opener();
+    sandbox.note("Garden.md", "# Garden\n## Todo\n- [ ] Rake the leaves\n");
+
+    assert_eq!(
+        sandbox.vt(&["open", "rake"]),
+        "Opened Garden: Rake the leaves\n"
+    );
+    assert!(
+        fs::read_to_string(opened)
+            .unwrap()
+            .ends_with("%2Fvault%2FGarden.md%23Todo")
     );
 }
 

@@ -145,6 +145,7 @@ The optional `repos:` list links the note to one or more git repositories. Insid
 | `vt tick [search]` | Check off a todo; without a search term you pick from a list. A repeating todo comes back with its next date |
 | `vt due [search] [@date]` | Set, change or clear (`@none`) a due date or repetition; asks for the date when you leave it out |
 | `vt move [search] [+project]` | Move a todo, with its details, into a project |
+| `vt open [search]` | Open the note of a todo in Obsidian, at the heading it sits under |
 | `vt hook` | Print the project note for a Claude Code `SessionStart` hook |
 
 Search terms and project names forgive typos: `vt todo kitchn` finds the Kitchen note. When a search matches several todos, `vt` shows a list to pick from in a terminal, and refuses outside one, so scripts never act on the wrong todo.

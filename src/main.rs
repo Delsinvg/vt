@@ -18,7 +18,7 @@ use std::env;
 use std::error::Error;
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
-use std::process::ExitCode;
+use std::process::{self, ExitCode};
 
 use chrono::Local;
 use clap::Parser;
@@ -106,6 +106,14 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             &mut prompt,
             &mut out,
         )?,
+        Command::Open { query } => commands::open_todo(
+            &vault,
+            &todos_of(Owner::Me)?,
+            &query.join(" "),
+            &mut prompt,
+            launch,
+            &mut out,
+        )?,
         Command::Due { words } => {
             let (query, when) = commands::split_date(&words);
             commands::set_due(
@@ -138,6 +146,20 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn launch(uri: &str) -> io::Result<()> {
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let status = process::Command::new(opener).arg(uri).status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!("{opener} could not open {uri}")))
+    }
 }
 
 fn todo_scope(vault: &Vault, project: Option<String>, all: bool) -> io::Result<Scope> {

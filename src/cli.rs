@@ -90,6 +90,19 @@ pub enum Command {
     },
 
     #[command(
+        about = "Open the note of a todo in Obsidian, at the heading it sits under",
+        after_help = "Examples:\n  vt open beans\n  vt open          (pick a todo from a list)"
+    )]
+    Open {
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            help = "Part of the todo text (typos allowed)"
+        )]
+        query: Vec<String>,
+    },
+
+    #[command(
         about = "Set, change or clear the due date of a todo",
         after_help = "Examples:\n  vt due milk @friday\n  vt due plumber @none\n  vt due          (pick a todo, then type a date)"
     )]

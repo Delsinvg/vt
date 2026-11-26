@@ -4,6 +4,7 @@ mod change;
 mod choose;
 mod hook;
 mod list;
+mod open;
 mod recap;
 mod relocate;
 
@@ -12,6 +13,7 @@ pub use agenda::agenda;
 pub use change::{set_due, split_date, tick};
 pub use hook::{default_instruction, session_start};
 pub use list::{Scope, list_todos};
+pub use open::open_todo;
 pub use recap::recap;
 pub use relocate::move_todos;
 
