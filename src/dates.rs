@@ -680,7 +680,13 @@ mod tests {
 
     #[test]
     fn an_unknown_period_is_an_error() {
-        assert!(period_on_friday("nextweek").is_err());
+        let error = period_on_friday("nextweek").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .starts_with("unknown period 'nextweek': use today, yesterday")
+        );
     }
 
     #[test]

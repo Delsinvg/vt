@@ -195,9 +195,9 @@ mod tests {
 
     #[test]
     fn a_todo_needs_some_text() {
-        assert_eq!(
-            compose(&words("@tomorrow"), &friday()),
-            Err(ComposeError::Empty)
-        );
+        let error = compose(&words("@tomorrow"), &friday()).unwrap_err();
+
+        assert_eq!(error, ComposeError::Empty);
+        assert_eq!(error.to_string(), "nothing to add: give the todo some text");
     }
 }

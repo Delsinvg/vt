@@ -115,4 +115,18 @@ mod tests {
             "Nothing checked off between 2026-11-16 and 2026-11-20\n"
         );
     }
+
+    #[test]
+    fn todos_checked_off_on_the_same_day_follow_the_notes() {
+        let todos = vec![
+            found("Projects/Garden/Garden.md", "- [x] Buy seeds ✅ 2026-11-19"),
+            found("Inbox.md", "- [x] Buy milk ✅ 2026-11-19"),
+        ];
+
+        assert_eq!(
+            render(&todos, None),
+            "2026-11-19  Buy milk  (Inbox)\n\
+             2026-11-19  Buy seeds  (Garden)\n"
+        );
+    }
 }

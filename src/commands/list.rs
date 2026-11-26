@@ -291,4 +291,22 @@ mod tests {
             "No open todos in Projects/Attic; 'vt todo --all' shows everything\n"
         );
     }
+
+    #[test]
+    fn dates_are_colored_by_how_close_they_are_in_a_terminal() {
+        let terminal = Style { terminal: true };
+        let todos = vec![
+            found("Inbox.md", &[], "- [ ] Fix the tap 📅 2026-11-18"),
+            found("Inbox.md", &[], "- [ ] Call the plumber 📅 2026-11-20"),
+            found("Inbox.md", &[], "- [ ] Buy seeds 📅 2026-11-27"),
+        ];
+        let mut out = Vec::new();
+
+        list_todos(&todos, &Scope::All, today(), terminal, &mut out).unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains(&terminal.overdue("📅 2026-11-18")));
+        assert!(rendered.contains(&terminal.due_today("📅 2026-11-20")));
+        assert!(rendered.contains(&terminal.dim("📅 2026-11-27")));
+    }
 }

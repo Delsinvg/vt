@@ -143,4 +143,32 @@ mod tests {
             Validation::Valid
         );
     }
+
+    #[test]
+    fn an_answer_is_passed_on() {
+        assert_eq!(
+            empty_when_cancelled(Ok(Some("friday".to_string()))).unwrap(),
+            Some("friday".to_string())
+        );
+    }
+
+    #[test]
+    fn escape_or_ctrl_c_answers_nothing() {
+        assert_eq!(
+            empty_when_cancelled::<Vec<usize>>(Err(InquireError::OperationCanceled)).unwrap(),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            empty_when_cancelled::<Option<String>>(Err(InquireError::OperationInterrupted))
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn other_prompt_failures_are_errors() {
+        let error = empty_when_cancelled::<Option<String>>(Err(InquireError::NotTTY)).unwrap_err();
+
+        assert_eq!(error.to_string(), InquireError::NotTTY.to_string());
+    }
 }

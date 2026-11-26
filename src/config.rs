@@ -357,4 +357,22 @@ mod tests {
         assert!(error.starts_with("no vault configured. Add vault = "));
         assert!(error.contains("config.toml"));
     }
+
+    #[test]
+    fn an_absolute_vault_is_used_as_is() {
+        let settings = load_with(Some("vault = \"/srv/notes\"\n"), None).unwrap();
+
+        assert_eq!(settings.vault, Some(PathBuf::from("/srv/notes")));
+    }
+
+    #[test]
+    fn a_config_that_cannot_be_read_is_an_error() {
+        let directory = TempDir::new().unwrap();
+        let path = directory.path().join("config.toml");
+        fs::create_dir(&path).unwrap();
+
+        let error = load_from(&path, None, Path::new(HOME)).unwrap_err();
+
+        assert!(error.to_string().starts_with(&path.display().to_string()));
+    }
 }

@@ -593,4 +593,65 @@ mod tests {
             "# Garden\n## Tasks\n\n- [ ] Rake the leaves\n\n## Links\n"
         );
     }
+
+    #[test]
+    fn refuses_to_repeat_when_the_line_changed_in_the_meantime() {
+        let directory = vault_with(&[("Garden.md", GARDEN)]);
+        let vault = Vault::new(directory.path());
+        let found = vault.todos().unwrap().remove(0);
+        let changed = "# Garden\n\nsomething else\n";
+        fs::write(directory.path().join("Garden.md"), changed).unwrap();
+
+        let error = vault
+            .check_off_and_repeat(&found, &found.todo, &found.todo)
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), CHANGED_SINCE_READ);
+        assert_eq!(read(&directory, "Garden.md"), changed);
+    }
+
+    #[test]
+    fn refuses_to_move_when_the_line_changed_in_the_meantime() {
+        let directory = garden_and_inbox();
+        let vault = Vault::new(directory.path());
+        let hose = vault.todos().unwrap().remove(0);
+        fs::write(directory.path().join("Inbox.md"), "# Inbox\n").unwrap();
+
+        let error = vault
+            .move_todo(&hose, Path::new("Garden.md"), TASKS)
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), CHANGED_SINCE_READ);
+        assert_eq!(
+            read(&directory, "Garden.md"),
+            "# Garden\n## Tasks\n\n## Links\n"
+        );
+    }
+
+    #[test]
+    fn refuses_to_move_a_todo_into_its_own_note() {
+        let directory = garden_and_inbox();
+        let vault = Vault::new(directory.path());
+        let hose = vault.todos().unwrap().remove(0);
+        let before = read(&directory, "Inbox.md");
+
+        let error = vault
+            .move_todo(&hose, Path::new("Inbox.md"), TASKS)
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "'Buy a hose' is already in Inbox.md");
+        assert_eq!(read(&directory, "Inbox.md"), before);
+    }
+
+    #[test]
+    fn refuses_to_add_to_a_note_without_the_section() {
+        let directory = garden_and_inbox();
+
+        let error = Vault::new(directory.path())
+            .add_to_section(Path::new("Kitchen.md"), TASKS, "- [ ] Fix the tap")
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "Kitchen.md has no '## Tasks' section");
+        assert_eq!(read(&directory, "Kitchen.md"), "# Kitchen\n");
+    }
 }

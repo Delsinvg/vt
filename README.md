@@ -249,6 +249,7 @@ The hook prints nothing outside a git repository or without a configured vault, 
 
 ```sh
 cargo test                    # unit and integration tests, no real notes needed
+cargo llvm-cov                # test coverage, after: cargo install cargo-llvm-cov
 cargo clippy --all-targets    # lints
 cargo fmt                     # formatting
 ```

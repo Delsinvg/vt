@@ -253,4 +253,35 @@ mod tests {
         );
         assert_eq!(prompt.shown_options.len(), 3);
     }
+
+    #[test]
+    fn without_open_todos_there_is_nothing_to_choose() {
+        let error = choose(&[], "milk", &mut ScriptedPrompt::non_interactive()).unwrap_err();
+
+        assert_eq!(error.to_string(), "there are no open todos");
+    }
+
+    #[test]
+    fn without_a_search_term_outside_a_terminal_is_an_error() {
+        let todos = sample();
+        let open: Vec<&VaultTodo> = todos.iter().collect();
+
+        let error = choose(&open, "", &mut ScriptedPrompt::non_interactive()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "give a search term to pick a todo, e.g. 'milk'"
+        );
+    }
+
+    #[test]
+    fn without_projects_there_is_nowhere_to_go() {
+        let error = choose_project(&[], Some("garden"), &mut ScriptedPrompt::non_interactive())
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "no note has a section to move todos into"
+        );
+    }
 }

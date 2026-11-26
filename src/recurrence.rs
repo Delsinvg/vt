@@ -247,6 +247,7 @@ mod tests {
             "every month on the 21st",
             "every month on the 22nd",
             "every month on the 23rd",
+            "every month on the 25th",
             "every 3 months on the last",
             "every year",
         ] {

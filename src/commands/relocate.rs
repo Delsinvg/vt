@@ -163,4 +163,24 @@ mod tests {
             ("buy a hose".to_string(), Some("garden".to_string()))
         );
     }
+
+    #[test]
+    fn moves_nothing_when_no_todo_is_picked() {
+        let (directory, printed) = run(
+            "buy +garden",
+            &mut ScriptedPrompt::picking(vec![], None, true),
+        );
+
+        assert_eq!(printed, Ok("Nothing moved\n".to_string()));
+        assert_eq!(read(&directory, "Inbox.md"), INBOX);
+    }
+
+    #[test]
+    fn moves_nothing_when_no_project_is_picked() {
+        let (directory, printed) = run("hose", &mut ScriptedPrompt::picking(vec![], None, true));
+
+        assert_eq!(printed, Ok("Nothing moved\n".to_string()));
+        assert_eq!(read(&directory, "Inbox.md"), INBOX);
+        assert_eq!(read(&directory, "Garden.md"), GARDEN);
+    }
 }

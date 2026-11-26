@@ -589,4 +589,32 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn tick_changes_nothing_when_nothing_is_picked() {
+        let mut scenario = Scenario::new();
+
+        scenario
+            .tick("", &mut ScriptedPrompt::picking(vec![], None, true))
+            .unwrap();
+
+        assert_eq!(scenario.inbox(), INBOX);
+        assert_eq!(scenario.printed(), "Nothing checked off\n");
+    }
+
+    #[test]
+    fn due_changes_nothing_when_nothing_is_picked() {
+        let mut scenario = Scenario::new();
+
+        scenario
+            .set_due(
+                "",
+                &["friday"],
+                &mut ScriptedPrompt::picking(vec![], None, true),
+            )
+            .unwrap();
+
+        assert_eq!(scenario.inbox(), INBOX);
+        assert_eq!(scenario.printed(), "Nothing changed\n");
+    }
 }

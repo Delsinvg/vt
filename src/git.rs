@@ -129,4 +129,38 @@ mod tests {
 
         assert_eq!(repository_root(folder.path()), None);
     }
+
+    #[test]
+    fn a_worktree_of_a_bare_repository_belongs_to_the_bare_repository() {
+        let origin = repository();
+        let parent = TempDir::new().unwrap();
+        let bare = parent.path().join("garden.git");
+        let worktree = parent.path().join("feature");
+        run_git(
+            parent.path(),
+            &[
+                "clone",
+                "--bare",
+                "--quiet",
+                origin.path().to_str().unwrap(),
+                bare.to_str().unwrap(),
+            ],
+        );
+        run_git(
+            &bare,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                worktree.to_str().unwrap(),
+                "-b",
+                "feature",
+            ],
+        );
+
+        assert_eq!(
+            repository_root(&worktree).map(|root| fs::canonicalize(root).unwrap()),
+            Some(fs::canonicalize(&bare).unwrap())
+        );
+    }
 }

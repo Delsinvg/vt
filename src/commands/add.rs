@@ -131,4 +131,47 @@ mod tests {
             "no project matches 'attic', so it goes to the inbox\nAdded to inbox: Fix the roof\n"
         );
     }
+
+    #[test]
+    fn a_repeating_todo_says_how_it_repeats() {
+        let (directory, printed) = add("Send the report @every-friday");
+
+        assert_eq!(
+            read(&directory, "Inbox.md"),
+            "# Inbox\n- [ ] Send the report 🔁 every week 📅 2026-11-27\n"
+        );
+        assert_eq!(
+            printed,
+            "Added to inbox: Send the report (due 2026-11-27, repeats every week)\n"
+        );
+    }
+
+    #[test]
+    fn a_cancelled_project_choice_falls_back_to_the_inbox() {
+        let directory = TempDir::new().unwrap();
+        fs::write(directory.path().join("Inbox.md"), "# Inbox\n").unwrap();
+        fs::write(directory.path().join("Garden.md"), "# Garden\n## Tasks\n").unwrap();
+        fs::write(directory.path().join("Garage.md"), "# Garage\n## Tasks\n").unwrap();
+        let words: Vec<String> = ["Fix", "the", "door", "+ga"].map(String::from).to_vec();
+
+        let mut out = Vec::new();
+        add_todo(
+            &Vault::new(directory.path()),
+            &layout(),
+            &words,
+            &Calendar::on(friday()),
+            &mut ScriptedPrompt::picking(vec![], None, true),
+            &mut out,
+        )
+        .unwrap();
+
+        assert_eq!(
+            read(&directory, "Inbox.md"),
+            "# Inbox\n- [ ] Fix the door\n"
+        );
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "No project chosen, so it goes to the inbox\nAdded to inbox: Fix the door\n"
+        );
+    }
 }
