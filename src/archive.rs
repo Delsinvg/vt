@@ -15,6 +15,13 @@ pub fn is_archive(note: &Path) -> bool {
     stem_of(note).ends_with(SUFFIX)
 }
 
+pub fn source_of(note: &Path) -> PathBuf {
+    match stem_of(note).strip_suffix(SUFFIX) {
+        Some(source) => note.with_file_name(format!("{source}.md")),
+        None => note.to_path_buf(),
+    }
+}
+
 pub fn title_for(note: &Path) -> String {
     format!("# {}{SUFFIX}", stem_of(note))
 }
@@ -177,5 +184,17 @@ mod tests {
         );
         assert!(is_archive(Path::new("Work/shop/shop archive.md")));
         assert!(!is_archive(Path::new("Work/shop/shop.md")));
+    }
+
+    #[test]
+    fn an_archive_belongs_to_the_note_beside_it() {
+        assert_eq!(
+            source_of(Path::new("Work/shop/shop archive.md")),
+            PathBuf::from("Work/shop/shop.md")
+        );
+        assert_eq!(
+            source_of(Path::new("Work/shop/shop.md")),
+            PathBuf::from("Work/shop/shop.md")
+        );
     }
 }

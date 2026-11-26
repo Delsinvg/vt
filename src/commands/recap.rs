@@ -2,7 +2,8 @@ use std::io::{self, Write};
 
 use chrono::NaiveDate;
 
-use super::{in_notes_matching, note_title};
+use super::{in_notes_matching, title_of};
+use crate::archive;
 use crate::dates::Period;
 use crate::output::Style;
 use crate::vault::VaultTodo;
@@ -39,7 +40,7 @@ pub fn recap(
             out,
             "{completed}  {}  {}",
             style.links(&found.todo.text),
-            style.dim(&format!("({})", note_title(found)))
+            style.dim(&format!("({})", title_of(&archive::source_of(&found.note))))
         )?;
     }
     Ok(())
@@ -103,6 +104,30 @@ mod tests {
         assert_eq!(
             render(&sample(), Some("garden")),
             "2026-11-19  Buy seeds  (Garden)\n"
+        );
+    }
+
+    #[test]
+    fn an_archived_todo_counts_for_its_project() {
+        let todos = vec![
+            found("Projects/Garden/Garden.md", "- [x] Buy seeds ✅ 2026-11-19"),
+            found(
+                "Projects/Garden/Garden archive.md",
+                "- [x] Rake the leaves ✅ 2026-11-18",
+            ),
+            found("Inbox archive.md", "- [x] Buy milk ✅ 2026-11-17"),
+        ];
+
+        assert_eq!(
+            render(&todos, Some("garden")),
+            "2026-11-19  Buy seeds  (Garden)\n\
+             2026-11-18  Rake the leaves  (Garden)\n"
+        );
+        assert_eq!(
+            render(&todos, None),
+            "2026-11-19  Buy seeds  (Garden)\n\
+             2026-11-18  Rake the leaves  (Garden)\n\
+             2026-11-17  Buy milk  (Inbox)\n"
         );
     }
 

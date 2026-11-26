@@ -144,7 +144,7 @@ The optional `repos:` list links the note to one or more git repositories. Insid
 |---|---|
 | `vt todo [project]` | Open todos, grouped per note and heading, with due dates. Inside a project's repository only that project; `--all` for everything, `--agent` for the agent's todos |
 | `vt agenda [project]` | Every open todo with a due date, earliest first; overdue in red, today in yellow |
-| `vt recap [period]` | What you checked off; `--project` to narrow it down |
+| `vt recap [period]` | What you checked off, archived todos included; `--project` to narrow it down |
 | `vt inbox [text]` | Add a todo, or show the inbox without text |
 | `vt tick [search]` | Check off a todo; without a search term you pick from a list. A repeating todo comes back with its next date |
 | `vt due [search] [@date]` | Set, change or clear (`@none`) a due date or repetition; asks for the date when you leave it out |
@@ -202,6 +202,18 @@ Checked off: Send the weekly report, again on 2026-12-04
 - `vt due … @date` moves the next time and keeps the repetition; `@none` removes both.
 
 `vt` writes and reads the rules of the Obsidian [Tasks](https://publish.obsidian.md/tasks/Getting+Started/Recurring+Tasks) plugin: `every day`, `every 3 days`, `every week`, `every 2 weeks`, `every month on the 1st`, `every month on the last`, `every year`, each optionally followed by `when done`. A rule it does not understand, such as `every monday and thursday`, stays in your note untouched; `vt tick` then only checks the todo off and says so.
+
+### Archiving checked-off todos
+
+Checked-off todos pile up in a note, and a repeating todo leaves one behind every time. `vt archive` moves the ones checked off more than 30 days ago (`archive_after_days`) to an archive next to their note:
+
+```
+$ vt archive
+Archived 3 checked-off todos from Garden into Garden archive
+Dated 1 checked-off todo in Kitchen without a date; they go to the archive in 30 days
+```
+
+`Garden/Garden archive.md` keeps the headings the todos sat under, so `## Agent` todos stay the agent's. A todo checked off without a `✅` date, by hand or in Obsidian without the Tasks plugin, first gets today's date. `vt recap` counts an archived todo for the project it came from, and `vt move` never offers an archive as a project. Run it whenever you like: twice in a row, the second run does nothing.
 
 ### Dates
 
