@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use chrono::Weekday;
 use serde::Deserialize;
 
-use crate::dates::{DEFAULT_MONTH_END, DEFAULT_WEEK_END, DayOfMonth, weekday_named};
+use crate::dates::{DEFAULT_MONTH_END, DEFAULT_WEEK_END, weekday_named};
+use crate::recurrence::DayOfMonth;
 
 const DEFAULT_INBOX: &str = "Inbox.md";
 const DEFAULT_SECTION: &str = "Todo";

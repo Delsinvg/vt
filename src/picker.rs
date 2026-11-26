@@ -7,8 +7,7 @@ use inquire::{CustomUserError, InquireError, MultiSelect, Select, Text};
 const PICK_MANY_HELP: &str = "type to filter, space to select, enter to confirm, esc to cancel";
 const NOTHING_SELECTED: &str = "press space to select a todo first, or esc to cancel";
 const PICK_ONE_HELP: &str = "type to filter, enter to choose, esc to cancel";
-const DATE_HELP: &str =
-    "tomorrow, friday, nextweek, thismonth, 25/11, 2026-12-01 or none (Dutch works too)";
+const DATE_HELP: &str = "tomorrow, friday, nextweek, thismonth, 25/11, 2026-12-01, every-friday, 1/12 @every-month or none (Dutch works too)";
 
 pub trait Prompt {
     fn interactive(&self) -> bool;

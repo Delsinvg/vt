@@ -1,5 +1,9 @@
 use chrono::Weekday;
 
+use crate::recurrence::Unit;
+
+const UNITS: [Unit; 4] = [Unit::Day, Unit::Week, Unit::Month, Unit::Year];
+
 const WEEK: [Weekday; 7] = [
     Weekday::Mon,
     Weekday::Tue,
@@ -25,6 +29,8 @@ struct Vocabulary {
     next_month: &'static str,
     no_date: &'static str,
     weekdays: [&'static str; 7],
+    every: &'static [&'static str],
+    units: [(&'static str, &'static str); 4],
 }
 
 const ENGLISH: Vocabulary = Vocabulary {
@@ -49,6 +55,13 @@ const ENGLISH: Vocabulary = Vocabulary {
         "friday",
         "saturday",
         "sunday",
+    ],
+    every: &["every"],
+    units: [
+        ("day", "days"),
+        ("week", "weeks"),
+        ("month", "months"),
+        ("year", "years"),
     ],
 };
 
@@ -75,6 +88,13 @@ const DUTCH: Vocabulary = Vocabulary {
         "zaterdag",
         "zondag",
     ],
+    every: &["elke", "elk"],
+    units: [
+        ("dag", "dagen"),
+        ("week", "weken"),
+        ("maand", "maanden"),
+        ("jaar", "jaren"),
+    ],
 };
 
 const LANGUAGES: [Vocabulary; 2] = [ENGLISH, DUTCH];
@@ -89,6 +109,12 @@ pub(super) enum Keyword {
     ThisMonth,
     NextMonth,
     On(Weekday),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Every {
+    Unit(u32, Unit),
+    Weekday(Weekday),
 }
 
 #[derive(Clone, Copy)]
@@ -120,6 +146,32 @@ impl Vocabulary {
         .map(|(_, period)| period)
     }
 
+    fn every(&self, word: &str) -> Option<Every> {
+        self.every
+            .iter()
+            .filter_map(|every| word.strip_prefix(every))
+            .find_map(|rest| self.period_after_every(rest))
+    }
+
+    fn period_after_every(&self, rest: &str) -> Option<Every> {
+        let digits = rest.chars().take_while(char::is_ascii_digit).count();
+        let (count, name) = rest.split_at(digits);
+
+        if let Some(position) = self.weekdays.iter().position(|day| *day == name) {
+            return count.is_empty().then_some(Every::Weekday(WEEK[position]));
+        }
+        let position = self
+            .units
+            .iter()
+            .position(|(singular, plural)| *singular == name || *plural == name)?;
+        let interval = if count.is_empty() {
+            1
+        } else {
+            count.parse().ok()?
+        };
+        Some(Every::Unit(interval, UNITS[position]))
+    }
+
     fn keyword(&self, word: &str) -> Option<Keyword> {
         let fixed_words = [
             (Some(self.today), Keyword::Today),
@@ -144,6 +196,10 @@ impl Vocabulary {
 
 pub(super) fn keyword(word: &str) -> Option<Keyword> {
     LANGUAGES.iter().find_map(|language| language.keyword(word))
+}
+
+pub(super) fn every(word: &str) -> Option<Every> {
+    LANGUAGES.iter().find_map(|language| language.every(word))
 }
 
 pub(super) fn means_no_date(word: &str) -> bool {

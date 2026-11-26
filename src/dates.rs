@@ -1,37 +1,15 @@
 use std::fmt;
 
-use chrono::{Datelike, Days, Months, NaiveDate, Weekday};
+use chrono::{Datelike, Days, NaiveDate, Weekday};
 
 mod vocabulary;
 
-use vocabulary::{Keyword, PeriodWord, keyword, means_no_date, period};
+use vocabulary::{Every, Keyword, PeriodWord, every, keyword, means_no_date, period};
+
+use crate::recurrence::{DayOfMonth, Recurrence, Unit};
 
 pub const DEFAULT_WEEK_END: Weekday = Weekday::Fri;
 pub const DEFAULT_MONTH_END: DayOfMonth = DayOfMonth::Last;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DayOfMonth {
-    Fixed(u32),
-    Last,
-}
-
-impl DayOfMonth {
-    pub fn fixed(day: u32) -> Option<Self> {
-        (1..=31).contains(&day).then_some(Self::Fixed(day))
-    }
-
-    pub fn months_after(self, date: NaiveDate, months: u32) -> Option<NaiveDate> {
-        let first_of_month = date.with_day(1)?.checked_add_months(Months::new(months))?;
-        let last_of_month = first_of_month
-            .checked_add_months(Months::new(1))?
-            .pred_opt()?;
-        let day = match self {
-            Self::Fixed(day) => day.min(last_of_month.day()),
-            Self::Last => last_of_month.day(),
-        };
-        first_of_month.with_day(day)
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Calendar {
@@ -65,7 +43,7 @@ impl fmt::Display for UnknownDate {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "unknown date '{}': use e.g. tomorrow, friday, nextweek, thismonth, 25/11 or 2026-11-25 (Dutch words work too)",
+            "unknown date '{}': use e.g. tomorrow, friday, nextweek, thismonth, 25/11, 2026-11-25, every-friday or every-month (Dutch words work too)",
             self.0
         )
     }
@@ -73,7 +51,7 @@ impl fmt::Display for UnknownDate {
 
 impl std::error::Error for UnknownDate {}
 
-pub fn parse_date(input: &str, calendar: &Calendar) -> Result<NaiveDate, UnknownDate> {
+fn parse_date(input: &str, calendar: &Calendar) -> Result<NaiveDate, UnknownDate> {
     let today = calendar.today;
     let word = normalize(input);
 
@@ -84,11 +62,145 @@ pub fn parse_date(input: &str, calendar: &Calendar) -> Result<NaiveDate, Unknown
         .ok_or_else(|| UnknownDate(input.to_string()))
 }
 
-pub fn parse_due(input: &str, calendar: &Calendar) -> Result<Option<NaiveDate>, UnknownDate> {
-    if means_no_date(&normalize(input)) {
-        return Ok(None);
+#[derive(Debug, PartialEq)]
+pub enum Schedule {
+    NoDate,
+    Due(NaiveDate),
+    Repeating {
+        due: NaiveDate,
+        recurrence: Recurrence,
+    },
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ScheduleError {
+    Unknown(UnknownDate),
+    TwoDates(String, String),
+    TwoRepetitions(String, String),
+    WeekdayAndDate(String, String),
+    NoDateWithOthers(String),
+}
+
+impl fmt::Display for ScheduleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Unknown(unknown) => unknown.fmt(formatter),
+            Self::TwoDates(first, second) => {
+                write!(formatter, "@{first} and @{second} are both dates; give one")
+            }
+            Self::TwoRepetitions(first, second) => {
+                write!(formatter, "@{first} and @{second} both repeat; give one")
+            }
+            Self::WeekdayAndDate(repetition, date) => write!(
+                formatter,
+                "@{repetition} already sets the day; leave out @{date}, or use @every-week from that date"
+            ),
+            Self::NoDateWithOthers(word) => write!(
+                formatter,
+                "@{word} clears the date and its repetition; give it on its own"
+            ),
+        }
     }
-    parse_date(input, calendar).map(Some)
+}
+
+impl std::error::Error for ScheduleError {}
+
+enum AtWord {
+    NoDate,
+    Date(NaiveDate),
+    Every(Every),
+}
+
+fn at_word(word: &str, calendar: &Calendar) -> Result<AtWord, ScheduleError> {
+    let normalized = normalize(word);
+    if means_no_date(&normalized) {
+        return Ok(AtWord::NoDate);
+    }
+    if let Some(repetition) = every(&normalized) {
+        return Ok(AtWord::Every(repetition));
+    }
+    parse_date(word, calendar)
+        .map(AtWord::Date)
+        .map_err(ScheduleError::Unknown)
+}
+
+pub fn parse_schedule(words: &[&str], calendar: &Calendar) -> Result<Schedule, ScheduleError> {
+    let mut date: Option<(&str, NaiveDate)> = None;
+    let mut repetition: Option<(&str, Every)> = None;
+
+    for &word in words {
+        match at_word(word, calendar)? {
+            AtWord::NoDate if words.len() == 1 => return Ok(Schedule::NoDate),
+            AtWord::NoDate => return Err(ScheduleError::NoDateWithOthers(word.to_string())),
+            AtWord::Date(due) => {
+                if let Some((first, _)) = date.replace((word, due)) {
+                    return Err(ScheduleError::TwoDates(first.to_string(), word.to_string()));
+                }
+            }
+            AtWord::Every(every) => {
+                if let Some((first, _)) = repetition.replace((word, every)) {
+                    return Err(ScheduleError::TwoRepetitions(
+                        first.to_string(),
+                        word.to_string(),
+                    ));
+                }
+            }
+        }
+    }
+
+    match (date, repetition) {
+        (None, None) => Ok(Schedule::NoDate),
+        (Some((_, due)), None) => Ok(Schedule::Due(due)),
+        (date, Some((word, every))) => repeating(word, every, date, calendar),
+    }
+}
+
+fn repeating(
+    word: &str,
+    every: Every,
+    date: Option<(&str, NaiveDate)>,
+    calendar: &Calendar,
+) -> Result<Schedule, ScheduleError> {
+    let not_understood = || ScheduleError::Unknown(UnknownDate(word.to_string()));
+
+    let (due, recurrence) = match (every, date) {
+        (Every::Weekday(_), Some((date_word, _))) => {
+            return Err(ScheduleError::WeekdayAndDate(
+                word.to_string(),
+                date_word.to_string(),
+            ));
+        }
+        (Every::Weekday(day), None) => (
+            next_after(calendar.today, day),
+            Recurrence::every(1, Unit::Week, None),
+        ),
+        (Every::Unit(interval, unit), date) => {
+            let due = match date {
+                Some((_, due)) => due,
+                None => first_due(unit, calendar).ok_or_else(not_understood)?,
+            };
+            let day_of_month = (unit == Unit::Month).then(|| match date {
+                Some(_) => DayOfMonth::Fixed(due.day()),
+                None => calendar.month_ends_on,
+            });
+            (due, Recurrence::every(interval, unit, day_of_month))
+        }
+    };
+
+    Ok(Schedule::Repeating {
+        due,
+        recurrence: recurrence.ok_or_else(not_understood)?,
+    })
+}
+
+fn first_due(unit: Unit, calendar: &Calendar) -> Option<NaiveDate> {
+    let today = calendar.today;
+    match unit {
+        Unit::Day => Some(today),
+        Unit::Week => Some(next_or_same(today, calendar.week_ends_on)),
+        Unit::Month => end_of_month(calendar, 0),
+        Unit::Year => NaiveDate::from_ymd_opt(today.year(), 12, 31),
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -292,14 +404,6 @@ mod tests {
     }
 
     #[test]
-    fn a_day_of_the_month_lies_between_1_and_31() {
-        assert_eq!(DayOfMonth::fixed(0), None);
-        assert_eq!(DayOfMonth::fixed(1), Some(DayOfMonth::Fixed(1)));
-        assert_eq!(DayOfMonth::fixed(31), Some(DayOfMonth::Fixed(31)));
-        assert_eq!(DayOfMonth::fixed(32), None);
-    }
-
-    #[test]
     fn next_month_after_the_end_of_january_is_the_end_of_february() {
         assert_eq!(
             parse_date("nextmonth", &Calendar::on(date(2027, 1, 31))),
@@ -331,16 +435,159 @@ mod tests {
         assert!(on_friday("someday").is_err());
     }
 
+    fn schedule_on_friday(words: &[&str]) -> Result<Schedule, String> {
+        parse_schedule(words, &Calendar::on(date(FRIDAY.0, FRIDAY.1, FRIDAY.2)))
+            .map_err(|error| error.to_string())
+    }
+
+    fn repeating(due: NaiveDate, rule: &str) -> Result<Schedule, String> {
+        Ok(Schedule::Repeating {
+            due,
+            recurrence: Recurrence::parse(rule).unwrap(),
+        })
+    }
+
     #[test]
     fn none_or_geen_means_no_due_date() {
-        let friday = date(FRIDAY.0, FRIDAY.1, FRIDAY.2);
+        assert_eq!(schedule_on_friday(&["none"]), Ok(Schedule::NoDate));
+        assert_eq!(schedule_on_friday(&["geen"]), Ok(Schedule::NoDate));
+        assert_eq!(schedule_on_friday(&[]), Ok(Schedule::NoDate));
+    }
 
-        assert_eq!(parse_due("none", &Calendar::on(friday)), Ok(None));
-        assert_eq!(parse_due("geen", &Calendar::on(friday)), Ok(None));
+    #[test]
+    fn a_single_date_is_a_due_date() {
         assert_eq!(
-            parse_due("tomorrow", &Calendar::on(friday)),
-            Ok(Some(date(2026, 11, 21)))
+            schedule_on_friday(&["tomorrow"]),
+            Ok(Schedule::Due(date(2026, 11, 21)))
         );
+    }
+
+    #[test]
+    fn every_weekday_starts_on_the_next_one_and_repeats_weekly() {
+        let expected = repeating(date(2026, 11, 27), "every week");
+
+        assert_eq!(schedule_on_friday(&["every-friday"]), expected);
+        assert_eq!(schedule_on_friday(&["elke-vrijdag"]), expected);
+        assert_eq!(schedule_on_friday(&["Every Friday"]), expected);
+    }
+
+    #[test]
+    fn every_day_starts_today() {
+        assert_eq!(
+            schedule_on_friday(&["every-day"]),
+            repeating(date(2026, 11, 20), "every day")
+        );
+        assert_eq!(
+            schedule_on_friday(&["elke-3-dagen"]),
+            repeating(date(2026, 11, 20), "every 3 days")
+        );
+    }
+
+    #[test]
+    fn every_week_starts_at_the_end_of_this_week() {
+        assert_eq!(
+            parse_schedule(&["every-week"], &Calendar::on(date(2026, 11, 18))),
+            Ok(Schedule::Repeating {
+                due: date(2026, 11, 20),
+                recurrence: Recurrence::parse("every week").unwrap(),
+            })
+        );
+        assert_eq!(
+            schedule_on_friday(&["elke-2-weken"]),
+            repeating(date(2026, 11, 20), "every 2 weeks")
+        );
+    }
+
+    #[test]
+    fn every_month_starts_at_the_end_of_this_month_and_keeps_that_day() {
+        assert_eq!(
+            schedule_on_friday(&["every-month"]),
+            repeating(date(2026, 11, 30), "every month on the last")
+        );
+
+        let calendar = Calendar {
+            month_ends_on: DayOfMonth::Fixed(25),
+            ..Calendar::on(date(2026, 11, 20))
+        };
+        assert_eq!(
+            parse_schedule(&["elke-maand"], &calendar),
+            Ok(Schedule::Repeating {
+                due: date(2026, 11, 25),
+                recurrence: Recurrence::parse("every month on the 25th").unwrap(),
+            })
+        );
+    }
+
+    #[test]
+    fn every_year_starts_at_the_end_of_this_year() {
+        assert_eq!(
+            schedule_on_friday(&["elk-jaar"]),
+            repeating(date(2026, 12, 31), "every year")
+        );
+    }
+
+    #[test]
+    fn a_date_next_to_a_repetition_is_the_first_occurrence() {
+        assert_eq!(
+            schedule_on_friday(&["1/12", "every-month"]),
+            repeating(date(2026, 12, 1), "every month on the 1st")
+        );
+        assert_eq!(
+            schedule_on_friday(&["every-2-weeks", "monday"]),
+            repeating(date(2026, 11, 23), "every 2 weeks")
+        );
+    }
+
+    #[test]
+    fn two_dates_are_an_error() {
+        assert_eq!(
+            schedule_on_friday(&["friday", "monday"]),
+            Err("@friday and @monday are both dates; give one".to_string())
+        );
+    }
+
+    #[test]
+    fn two_repetitions_are_an_error() {
+        assert_eq!(
+            schedule_on_friday(&["every-week", "elke-maand"]),
+            Err("@every-week and @elke-maand both repeat; give one".to_string())
+        );
+    }
+
+    #[test]
+    fn a_repeating_weekday_next_to_a_date_is_an_error() {
+        assert_eq!(
+            schedule_on_friday(&["every-friday", "1/12"]),
+            Err(
+                "@every-friday already sets the day; leave out @1/12, or use @every-week from that date"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn none_next_to_another_word_is_an_error() {
+        assert_eq!(
+            schedule_on_friday(&["geen", "every-week"]),
+            Err("@geen clears the date and its repetition; give it on its own".to_string())
+        );
+    }
+
+    #[test]
+    fn a_repetition_it_does_not_know_is_an_unknown_date() {
+        for word in [
+            "every-0-days",
+            "every-2-fridays",
+            "every-fortnight",
+            "elke-friday",
+        ] {
+            assert!(
+                schedule_on_friday(&[word])
+                    .unwrap_err()
+                    .starts_with(&format!("unknown date '{word}'")),
+                "{word}"
+            );
+        }
     }
 
     fn period_on_friday(input: &str) -> Result<(NaiveDate, NaiveDate), UnknownPeriod> {

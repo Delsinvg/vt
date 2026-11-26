@@ -2,29 +2,36 @@ use std::fmt;
 
 use chrono::NaiveDate;
 
-use crate::dates::{Calendar, UnknownDate, parse_date};
+use crate::dates::{Calendar, Schedule, ScheduleError, parse_schedule};
 use crate::links;
+use crate::recurrence::Recurrence;
+use crate::todo::Todo;
 
 #[derive(Debug, PartialEq)]
 pub struct NewTodo {
     pub text: String,
     pub due: Option<NaiveDate>,
+    pub recurrence: Option<Recurrence>,
     pub project: Option<String>,
 }
 
 impl NewTodo {
     pub fn line(&self) -> String {
-        match self.due {
-            Some(due) => format!("- [ ] {} 📅 {due}", self.text),
-            None => format!("- [ ] {}", self.text),
+        Todo {
+            text: self.text.clone(),
+            done: false,
+            recurrence: self.recurrence.map(|recurrence| recurrence.to_string()),
+            due: self.due,
+            completed: None,
         }
+        .render()
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ComposeError {
     Empty,
-    Date(UnknownDate),
+    Date(ScheduleError),
 }
 
 impl fmt::Display for ComposeError {
@@ -40,15 +47,15 @@ impl std::error::Error for ComposeError {}
 
 pub fn compose(words: &[String], calendar: &Calendar) -> Result<NewTodo, ComposeError> {
     let mut text_parts = Vec::new();
-    let mut due = None;
+    let mut when = Vec::new();
     let mut project = None;
 
     for word in words
         .iter()
         .flat_map(|argument| argument.split_whitespace())
     {
-        if let Some(when) = word.strip_prefix('@') {
-            due = Some(parse_date(when, calendar).map_err(ComposeError::Date)?);
+        if let Some(when_word) = word.strip_prefix('@') {
+            when.push(when_word);
         } else if let Some(name) = word.strip_prefix('+').filter(|name| !name.is_empty()) {
             project = Some(name.to_string());
         } else if links::is_url(word) {
@@ -62,9 +69,15 @@ pub fn compose(words: &[String], calendar: &Calendar) -> Result<NewTodo, Compose
         return Err(ComposeError::Empty);
     }
 
+    let (due, recurrence) = match parse_schedule(&when, calendar).map_err(ComposeError::Date)? {
+        Schedule::NoDate => (None, None),
+        Schedule::Due(due) => (Some(due), None),
+        Schedule::Repeating { due, recurrence } => (Some(due), Some(recurrence)),
+    };
     Ok(NewTodo {
         text: text_parts.join(" "),
         due,
+        recurrence,
         project,
     })
 }
@@ -144,10 +157,39 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_date_is_an_error() {
+    fn an_every_word_makes_the_todo_repeat() {
+        let todo = compose(&words("Send the weekly report @elke-vrijdag"), &friday()).unwrap();
+
         assert_eq!(
-            compose(&words("Call the plumber @someday"), &friday()),
-            Err(ComposeError::Date(UnknownDate("someday".to_string())))
+            todo.line(),
+            "- [ ] Send the weekly report 🔁 every week 📅 2026-11-27"
+        );
+    }
+
+    #[test]
+    fn a_date_and_an_every_word_together_set_the_first_occurrence() {
+        let todo = compose(&words("Pay the rent @1/12 @every-month"), &friday()).unwrap();
+
+        assert_eq!(
+            todo.line(),
+            "- [ ] Pay the rent 🔁 every month on the 1st 📅 2026-12-01"
+        );
+    }
+
+    #[test]
+    fn an_unknown_date_is_an_error() {
+        let error = compose(&words("Call the plumber @someday"), &friday()).unwrap_err();
+
+        assert!(error.to_string().starts_with("unknown date 'someday'"));
+    }
+
+    #[test]
+    fn two_dates_are_an_error() {
+        let error = compose(&words("Call the plumber @friday @monday"), &friday()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "@friday and @monday are both dates; give one"
         );
     }
 

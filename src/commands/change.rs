@@ -5,13 +5,14 @@ use chrono::NaiveDate;
 
 use super::choose::choose;
 use super::{bottom_up, open_todos, plain};
-use crate::dates::{Calendar, parse_due};
+use crate::dates::{Calendar, Schedule, parse_schedule};
 use crate::picker::Prompt;
 use crate::recurrence::Recurrence;
 use crate::todo::Todo;
 use crate::vault::{Vault, VaultTodo};
 
-const DATE_NEEDED: &str = "give a date, e.g. 'vt due milk @tomorrow', or '@none' to clear it";
+const DATE_NEEDED: &str =
+    "give a date, e.g. 'vt due milk @tomorrow' or '@every-friday', or '@none' to clear it";
 
 pub fn tick(
     vault: &Vault,
@@ -84,42 +85,81 @@ pub fn set_due(
     vault: &Vault,
     todos: &[VaultTodo],
     query: &str,
-    when: Option<&str>,
+    when: &[String],
     calendar: &Calendar,
     prompt: &mut impl Prompt,
     out: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
-    if when.is_none() && !prompt.interactive() {
+    if when.is_empty() && !prompt.interactive() {
         return Err(DATE_NEEDED.into());
     }
 
     let chosen = choose(&open_todos(todos), query, prompt)?;
-    let answer = match (chosen.is_empty(), when) {
-        (true, _) => None,
-        (false, Some(when)) => Some(when.to_string()),
-        (false, None) => prompt.ask_date()?,
+    let answer = match (chosen.is_empty(), when.is_empty()) {
+        (true, _) => Vec::new(),
+        (false, false) => when.to_vec(),
+        (false, true) => prompt
+            .ask_date()?
+            .map(|answer| words_of_answer(&answer))
+            .unwrap_or_default(),
     };
-    let Some(answer) = answer else {
+    if answer.is_empty() {
         writeln!(out, "Nothing changed")?;
         return Ok(());
-    };
+    }
 
-    let due = parse_due(answer.trim_start_matches('@'), calendar)?;
+    let words: Vec<&str> = answer.iter().map(String::as_str).collect();
+    let schedule = parse_schedule(&words, calendar)?;
     for found in chosen {
-        let rescheduled = Todo {
-            due,
-            ..found.todo.clone()
-        };
+        let rescheduled = rescheduled(&found.todo, &schedule);
         vault.replace_todo(found, &rescheduled)?;
-        match due {
-            Some(due) => writeln!(out, "{}: due {due}", plain(&found.todo.text))?,
-            None => writeln!(out, "{}: no due date", plain(&found.todo.text))?,
-        }
+        writeln!(
+            out,
+            "{}: {}",
+            plain(&found.todo.text),
+            describe_schedule(&rescheduled)
+        )?;
     }
     Ok(())
 }
 
-pub fn split_date(words: &[String]) -> (String, Option<String>) {
+fn words_of_answer(answer: &str) -> Vec<String> {
+    answer
+        .split('@')
+        .map(str::trim)
+        .filter(|word| !word.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+fn rescheduled(todo: &Todo, schedule: &Schedule) -> Todo {
+    match schedule {
+        Schedule::NoDate => Todo {
+            due: None,
+            recurrence: None,
+            ..todo.clone()
+        },
+        Schedule::Due(due) => Todo {
+            due: Some(*due),
+            ..todo.clone()
+        },
+        Schedule::Repeating { due, recurrence } => Todo {
+            due: Some(*due),
+            recurrence: Some(recurrence.to_string()),
+            ..todo.clone()
+        },
+    }
+}
+
+fn describe_schedule(todo: &Todo) -> String {
+    match (todo.due, &todo.recurrence) {
+        (Some(due), Some(rule)) => format!("due {due}, repeats {rule}"),
+        (Some(due), None) => format!("due {due}"),
+        (None, _) => "no due date".to_string(),
+    }
+}
+
+pub fn split_date(words: &[String]) -> (String, Vec<String>) {
     let (dates, query): (Vec<&String>, Vec<&String>) =
         words.iter().partition(|word| word.starts_with('@'));
     let query = query
@@ -127,7 +167,11 @@ pub fn split_date(words: &[String]) -> (String, Option<String>) {
         .map(|word| word.as_str())
         .collect::<Vec<_>>()
         .join(" ");
-    (query, dates.last().map(|date| date.to_string()))
+    let dates = dates
+        .iter()
+        .map(|date| date.trim_start_matches('@').to_string())
+        .collect();
+    (query, dates)
 }
 
 #[cfg(test)]
@@ -180,15 +224,16 @@ mod tests {
         fn set_due(
             &mut self,
             query: &str,
-            when: Option<&str>,
+            when: &[&str],
             prompt: &mut ScriptedPrompt,
         ) -> Result<(), Box<dyn Error>> {
             let todos = self.vault.todos().unwrap();
+            let when: Vec<String> = when.iter().map(|word| word.to_string()).collect();
             set_due(
                 &self.vault,
                 &todos,
                 query,
-                when,
+                &when,
                 &Calendar::on(friday()),
                 prompt,
                 &mut self.output,
@@ -366,7 +411,7 @@ mod tests {
         scenario
             .set_due(
                 "milk",
-                Some("@nextweek"),
+                &["nextweek"],
                 &mut ScriptedPrompt::non_interactive(),
             )
             .unwrap();
@@ -382,7 +427,7 @@ mod tests {
         scenario
             .set_due(
                 "plumber",
-                Some("@morgen"),
+                &["morgen"],
                 &mut ScriptedPrompt::non_interactive(),
             )
             .unwrap();
@@ -399,11 +444,7 @@ mod tests {
         let mut scenario = Scenario::new();
 
         scenario
-            .set_due(
-                "plumber",
-                Some("@geen"),
-                &mut ScriptedPrompt::non_interactive(),
-            )
+            .set_due("plumber", &["geen"], &mut ScriptedPrompt::non_interactive())
             .unwrap();
 
         assert!(scenario.inbox().contains("- [ ] Call the plumber\n"));
@@ -414,7 +455,7 @@ mod tests {
         let mut scenario = Scenario::new();
         let mut prompt = ScriptedPrompt::picking(vec![], Some("friday"), true);
 
-        scenario.set_due("milk", None, &mut prompt).unwrap();
+        scenario.set_due("milk", &[], &mut prompt).unwrap();
 
         assert!(scenario.inbox().contains("- [ ] Buy milk 📅 2026-11-27\n"));
     }
@@ -424,7 +465,7 @@ mod tests {
         let mut scenario = Scenario::new();
 
         let error = scenario
-            .set_due("milk", None, &mut ScriptedPrompt::non_interactive())
+            .set_due("milk", &[], &mut ScriptedPrompt::non_interactive())
             .unwrap_err();
 
         assert_eq!(error.to_string(), DATE_NEEDED);
@@ -432,15 +473,120 @@ mod tests {
     }
 
     #[test]
-    fn split_date_takes_the_at_word_out_of_the_query() {
-        let words: Vec<String> = ["call", "the", "@friday", "plumber"]
+    fn due_with_an_every_word_makes_the_todo_repeat() {
+        let mut scenario = Scenario::new();
+
+        scenario
+            .set_due(
+                "milk",
+                &["elke-vrijdag"],
+                &mut ScriptedPrompt::non_interactive(),
+            )
+            .unwrap();
+
+        assert!(
+            scenario
+                .inbox()
+                .contains("- [ ] Buy milk 🔁 every week 📅 2026-11-27\n")
+        );
+        assert_eq!(
+            scenario.printed(),
+            "Buy milk: due 2026-11-27, repeats every week\n"
+        );
+    }
+
+    #[test]
+    fn due_with_only_a_date_keeps_the_repetition() {
+        let mut scenario =
+            Scenario::with_inbox("# Inbox\n\n- [ ] Pay the rent 🔁 every month 📅 2026-11-30\n");
+
+        scenario
+            .set_due("rent", &["1/12"], &mut ScriptedPrompt::non_interactive())
+            .unwrap();
+
+        assert_eq!(
+            scenario.inbox(),
+            "# Inbox\n\n- [ ] Pay the rent 🔁 every month 📅 2026-12-01\n"
+        );
+    }
+
+    #[test]
+    fn due_none_also_clears_the_repetition() {
+        let mut scenario =
+            Scenario::with_inbox("# Inbox\n\n- [ ] Pay the rent 🔁 every month 📅 2026-11-30\n");
+
+        scenario
+            .set_due("rent", &["none"], &mut ScriptedPrompt::non_interactive())
+            .unwrap();
+
+        assert_eq!(scenario.inbox(), "# Inbox\n\n- [ ] Pay the rent\n");
+        assert_eq!(scenario.printed(), "Pay the rent: no due date\n");
+    }
+
+    #[test]
+    fn due_takes_a_date_and_an_every_word_together() {
+        let mut scenario = Scenario::new();
+
+        scenario
+            .set_due(
+                "milk",
+                &["1/12", "every-month"],
+                &mut ScriptedPrompt::non_interactive(),
+            )
+            .unwrap();
+
+        assert!(
+            scenario
+                .inbox()
+                .contains("- [ ] Buy milk 🔁 every month on the 1st 📅 2026-12-01\n")
+        );
+    }
+
+    #[test]
+    fn due_asks_for_a_repetition_in_words_or_with_at_signs() {
+        for (answer, line) in [
+            (
+                "every friday",
+                "- [ ] Buy milk 🔁 every week 📅 2026-11-27\n",
+            ),
+            (
+                "@1/12 @every-month",
+                "- [ ] Buy milk 🔁 every month on the 1st 📅 2026-12-01\n",
+            ),
+        ] {
+            let mut scenario = Scenario::new();
+            let mut prompt = ScriptedPrompt::picking(vec![], Some(answer), true);
+
+            scenario.set_due("milk", &[], &mut prompt).unwrap();
+
+            assert!(scenario.inbox().contains(line), "{answer}");
+        }
+    }
+
+    #[test]
+    fn due_changes_nothing_when_the_answer_is_empty() {
+        let mut scenario = Scenario::new();
+        let mut prompt = ScriptedPrompt::picking(vec![], Some("  "), true);
+
+        scenario.set_due("milk", &[], &mut prompt).unwrap();
+
+        assert_eq!(scenario.inbox(), INBOX);
+        assert_eq!(scenario.printed(), "Nothing changed\n");
+    }
+
+    #[test]
+    fn split_date_takes_the_at_words_out_of_the_query() {
+        let words: Vec<String> = ["call", "@1/12", "the", "@every-month", "plumber"]
             .iter()
             .map(|word| word.to_string())
             .collect();
 
         assert_eq!(
             split_date(&words),
-            ("call the plumber".to_string(), Some("@friday".to_string()))
+            (
+                "call the plumber".to_string(),
+                vec!["1/12".to_string(), "every-month".to_string()]
+            )
         );
     }
 }

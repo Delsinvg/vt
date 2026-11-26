@@ -112,7 +112,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 &vault,
                 &todos_of(Owner::Me)?,
                 &query,
-                when.as_deref(),
+                &when,
                 &calendar,
                 &mut prompt,
                 &mut out,

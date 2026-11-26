@@ -37,9 +37,13 @@ pub fn add_todo(
 
 fn report(out: &mut impl Write, place: &str, todo: &NewTodo) -> Result<(), Box<dyn Error>> {
     let text = plain(&todo.text);
-    match todo.due {
-        Some(due) => writeln!(out, "Added to {place}: {text} (due {due})")?,
-        None => writeln!(out, "Added to {place}: {text}")?,
+    match (todo.due, todo.recurrence) {
+        (Some(due), Some(recurrence)) => writeln!(
+            out,
+            "Added to {place}: {text} (due {due}, repeats {recurrence})"
+        )?,
+        (Some(due), None) => writeln!(out, "Added to {place}: {text} (due {due})")?,
+        (None, _) => writeln!(out, "Added to {place}: {text}")?,
     }
     Ok(())
 }

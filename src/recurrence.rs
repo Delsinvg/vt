@@ -1,16 +1,69 @@
-use chrono::{Datelike, Days, NaiveDate};
+use std::fmt;
 
-use crate::dates::DayOfMonth;
+use chrono::{Datelike, Days, Months, NaiveDate};
 
 const MONTHS_PER_YEAR: u32 = 12;
 const DAYS_PER_WEEK: u32 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Unit {
+pub enum Unit {
     Day,
     Week,
     Month,
     Year,
+}
+
+impl Unit {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Day => "day",
+            Self::Week => "week",
+            Self::Month => "month",
+            Self::Year => "year",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DayOfMonth {
+    Fixed(u32),
+    Last,
+}
+
+impl DayOfMonth {
+    pub fn fixed(day: u32) -> Option<Self> {
+        (1..=31).contains(&day).then_some(Self::Fixed(day))
+    }
+
+    pub fn months_after(self, date: NaiveDate, months: u32) -> Option<NaiveDate> {
+        let first_of_month = date.with_day(1)?.checked_add_months(Months::new(months))?;
+        let last_of_month = first_of_month
+            .checked_add_months(Months::new(1))?
+            .pred_opt()?;
+        let day = match self {
+            Self::Fixed(day) => day.min(last_of_month.day()),
+            Self::Last => last_of_month.day(),
+        };
+        first_of_month.with_day(day)
+    }
+}
+
+impl fmt::Display for DayOfMonth {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Last => write!(formatter, "last"),
+            Self::Fixed(day) => {
+                let suffix = match (day % 10, day % 100) {
+                    (_, 11..=13) => "th",
+                    (1, _) => "st",
+                    (2, _) => "nd",
+                    (3, _) => "rd",
+                    _ => "th",
+                };
+                write!(formatter, "{day}{suffix}")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -22,6 +75,16 @@ pub struct Recurrence {
 }
 
 impl Recurrence {
+    pub fn every(interval: u32, unit: Unit, day_of_month: Option<DayOfMonth>) -> Option<Self> {
+        let only_months_have_a_day = day_of_month.is_none() || unit == Unit::Month;
+        (interval > 0 && only_months_have_a_day).then_some(Self {
+            interval,
+            unit,
+            day_of_month,
+            when_done: false,
+        })
+    }
+
     /// @see https://publish.obsidian.md/tasks/Getting+Started/Recurring+Tasks
     pub fn parse(rule: &str) -> Option<Self> {
         let rule = rule.to_lowercase();
@@ -44,12 +107,9 @@ impl Recurrence {
             _ => return None,
         };
 
-        let only_months_have_a_day = day_of_month.is_none() || unit == Unit::Month;
-        (interval > 0 && only_months_have_a_day).then_some(Self {
-            interval,
-            unit,
-            day_of_month,
+        Some(Self {
             when_done,
+            ..Self::every(interval, unit, day_of_month)?
         })
     }
 
@@ -75,6 +135,23 @@ impl Recurrence {
         self.day_of_month
             .unwrap_or(DayOfMonth::Fixed(start.day()))
             .months_after(start, months)
+    }
+}
+
+impl fmt::Display for Recurrence {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        let unit = self.unit.name();
+        match self.interval {
+            1 => write!(formatter, "every {unit}")?,
+            interval => write!(formatter, "every {interval} {unit}s")?,
+        }
+        if let Some(day) = self.day_of_month {
+            write!(formatter, " on the {day}")?;
+        }
+        if self.when_done {
+            write!(formatter, " when done")?;
+        }
+        Ok(())
     }
 }
 
@@ -152,6 +229,47 @@ mod tests {
         ] {
             assert_eq!(Recurrence::parse(rule), None, "{rule}");
         }
+    }
+
+    #[test]
+    fn writes_the_rule_back_as_obsidian_tasks_reads_it() {
+        for rule in [
+            "every day",
+            "every 3 days",
+            "every week",
+            "every 2 weeks when done",
+            "every month on the 1st",
+            "every month on the 2nd",
+            "every month on the 3rd",
+            "every month on the 11th",
+            "every month on the 12th",
+            "every month on the 13th",
+            "every month on the 21st",
+            "every month on the 22nd",
+            "every month on the 23rd",
+            "every 3 months on the last",
+            "every year",
+        ] {
+            assert_eq!(Recurrence::parse(rule).unwrap().to_string(), rule);
+        }
+    }
+
+    #[test]
+    fn a_day_of_the_month_lies_between_1_and_31() {
+        assert_eq!(DayOfMonth::fixed(0), None);
+        assert_eq!(DayOfMonth::fixed(1), Some(DayOfMonth::Fixed(1)));
+        assert_eq!(DayOfMonth::fixed(31), Some(DayOfMonth::Fixed(31)));
+        assert_eq!(DayOfMonth::fixed(32), None);
+    }
+
+    #[test]
+    fn only_a_monthly_recurrence_has_a_day_of_the_month() {
+        assert!(Recurrence::every(1, Unit::Month, Some(DayOfMonth::Last)).is_some());
+        assert_eq!(
+            Recurrence::every(1, Unit::Week, Some(DayOfMonth::Last)),
+            None
+        );
+        assert_eq!(Recurrence::every(0, Unit::Day, None), None);
     }
 
     #[test]
