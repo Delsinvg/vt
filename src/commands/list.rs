@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
 
-use super::{note_name, open_todos, plain, title_of};
+use super::{note_name, open_todos, plain, repeat_label, title_of};
 use crate::markdown::heading_text;
 use crate::output::Style;
 use crate::select;
@@ -99,18 +99,28 @@ fn write_note(
         } else {
             UNDER_NOTE
         };
+        let labels: Vec<String> = [
+            found.todo.due.map(|due| due_label(due, today, style)),
+            found
+                .todo
+                .recurrence
+                .as_deref()
+                .map(|rule| repeat_label(rule, style)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         let text = style.links(&found.todo.text);
-        match found.todo.due {
-            Some(due) => {
-                let padding = widest - plain(&found.todo.text).chars().count();
-                writeln!(
-                    out,
-                    "{indent}{BULLET} {text}{}  {}",
-                    " ".repeat(padding),
-                    due_label(due, today, style)
-                )?
-            }
-            None => writeln!(out, "{indent}{BULLET} {text}")?,
+        if labels.is_empty() {
+            writeln!(out, "{indent}{BULLET} {text}")?;
+        } else {
+            let padding = widest - plain(&found.todo.text).chars().count();
+            writeln!(
+                out,
+                "{indent}{BULLET} {text}{}  {}",
+                " ".repeat(padding),
+                labels.join("  ")
+            )?;
         }
     }
     Ok(())
@@ -173,7 +183,7 @@ mod tests {
             found(
                 "Projects/Garden/Garden.md",
                 &["## Todo"],
-                "- [ ] Water the plants 📅 2026-11-18",
+                "- [ ] Water the plants 🔁 every 3 days 📅 2026-11-18",
             ),
             found(
                 "Projects/Garden/Garden.md",
@@ -200,11 +210,24 @@ mod tests {
              \x20   ○ Rake the leaves\n\
              \x20   ○ Buy seeds         📅 2026-11-27\n\
              \x20 Todo\n\
-             \x20   ○ Water the plants  📅 2026-11-18\n\
+             \x20   ○ Water the plants  📅 2026-11-18  🔁 every 3 days\n\
              \n\
              Kitchen\n\
              \x20 Todo\n\
              \x20   ○ Fix the tap\n"
+        );
+    }
+
+    #[test]
+    fn a_repetition_without_due_date_is_shown_after_the_text() {
+        let todos = vec![
+            found("Inbox.md", &[], "- [ ] Go to the gym 🔁 every week"),
+            found("Inbox.md", &[], "- [ ] Call the plumber"),
+        ];
+
+        assert_eq!(
+            render(&todos, Scope::All),
+            "Inbox\n  ○ Go to the gym     🔁 every week\n  ○ Call the plumber\n"
         );
     }
 

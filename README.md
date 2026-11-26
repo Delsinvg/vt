@@ -79,6 +79,7 @@ section = "Todo"                   # the "## " section projects collect todos in
 agent_section = "Agent"            # the "## " section for an AI agent's own todos
 ignore = ["Templates", "Archive"]  # folders, relative to the vault, that vt skips
 week_ends_on = "friday"            # the day @thisweek and @nextweek point to
+month_ends_on = "last"             # the day @thismonth and @nextmonth point to: "last" or 1 to 31
 hook_instruction = "..."           # what Claude Code does with the project note
 ```
 
@@ -91,7 +92,7 @@ The `VAULT` environment variable overrides `vault`, which is handy for a quick t
 A todo is a Markdown checkbox. Indented lines below it are its details and travel with it when you move it.
 
 ```markdown
-- [ ] Water the plants 📅 2026-11-27
+- [ ] Water the plants 🔁 every 3 days 📅 2026-11-27
 	- every morning, not the cactus
 - [x] Buy seeds ✅ 2026-11-20
 ```
@@ -99,6 +100,7 @@ A todo is a Markdown checkbox. Indented lines below it are its details and trave
 | Part | Meaning |
 |---|---|
 | `- [ ]` / `- [x]` | open / done (`[X]` works too) |
+| `🔁 every 3 days` | it repeats; see [Repeating todos](#repeating-todos) |
 | `📅 2026-11-27` | due date |
 | `✅ 2026-11-20` | the day it was checked off, written by `vt tick` |
 | `[shop!12](https://…)` | a link; `vt` shows the label and makes it clickable in your terminal |
@@ -140,8 +142,8 @@ The optional `repos:` list links the note to one or more git repositories. Insid
 | `vt agenda [project]` | Every open todo with a due date, earliest first; overdue in red, today in yellow |
 | `vt recap [period]` | What you checked off; `--project` to narrow it down |
 | `vt inbox [text]` | Add a todo, or show the inbox without text |
-| `vt tick [search]` | Check off a todo; without a search term you pick from a list |
-| `vt due [search] [@date]` | Set, change or clear (`@none`) a due date; asks for the date when you leave it out |
+| `vt tick [search]` | Check off a todo; without a search term you pick from a list. A repeating todo comes back with its next date |
+| `vt due [search] [@date]` | Set, change or clear (`@none`) a due date or repetition; asks for the date when you leave it out |
 | `vt move [search] [+project]` | Move a todo, with its details, into a project |
 | `vt hook` | Print the project note for a Claude Code `SessionStart` hook |
 
@@ -168,6 +170,33 @@ Links get a short, clickable name:
 
 In zsh, quote a URL that contains `?`, or add `alias vt="noglob vt"` to your `.zshrc`.
 
+### Repeating todos
+
+Give a todo an `@every-…` word, and checking it off puts the next one right above it:
+
+```sh
+vt inbox Send the weekly report @every-friday
+vt inbox Pay the rent @1/12 @every-month          # a date sets the first time
+vt due plants @elke-3-dagen                       # make an existing todo repeat
+```
+
+```
+$ vt tick report
+Checked off: Send the weekly report, again on 2026-12-04
+```
+
+```markdown
+- [ ] Send the weekly report 🔁 every week 📅 2026-12-04
+- [x] Send the weekly report 🔁 every week 📅 2026-11-27 ✅ 2026-11-27
+```
+
+- The next date counts from the due date, so a weekly todo stays on its weekday even when you check it off late. Rules that end in `when done`, which you can write in Obsidian, count from the day you checked it off instead.
+- Missed times are skipped: the next date is always after today.
+- The details below the todo come along, with their checkboxes open again, so a checklist starts fresh every time.
+- `vt due … @date` moves the next time and keeps the repetition; `@none` removes both.
+
+`vt` writes and reads the rules of the Obsidian [Tasks](https://publish.obsidian.md/tasks/Getting+Started/Recurring+Tasks) plugin: `every day`, `every 3 days`, `every week`, `every 2 weeks`, `every month on the 1st`, `every month on the last`, `every year`, each optionally followed by `when done`. A rule it does not understand, such as `every monday and thursday`, stays in your note untouched; `vt tick` then only checks the todo off and says so.
+
 ### Dates
 
 Dates start with `@` and work in English and Dutch. Capitals, dashes and spaces are ignored, so `@Next-Week` and `@volgende week` work too.
@@ -177,9 +206,16 @@ Dates start with `@` and work in English and Dutch. Capitals, dashes and spaces 
 | `today`, `tomorrow` | `vandaag`, `morgen`, `overmorgen` | that day |
 | `monday` … `sunday` | `maandag` … `zondag` | the next one after today |
 | `thisweek`, `nextweek` | `dezeweek`, `volgendeweek` | the end of that week (`week_ends_on`) |
-| `thismonth`, `nextmonth` | `dezemaand`, `volgendemaand` | the last day of that month |
+| `thismonth`, `nextmonth` | `dezemaand`, `volgendemaand` | the end of that month (`month_ends_on`); once that day has passed, a month later |
 | `25/11`, `2026-11-25` | | that date; day/month means the next time it comes |
-| `none` | `geen` | no due date (`vt due` only) |
+| `every-friday` | `elke-vrijdag` | the next Friday, then every week |
+| `every-day`, `every-3-days` | `elke-dag`, `elke-3-dagen` | today, then every (3) days |
+| `every-week`, `every-2-weeks` | `elke-week`, `elke-2-weken` | the end of this week, then every (2) weeks |
+| `every-month`, `every-3-months` | `elke-maand`, `elke-3-maanden` | the end of this month, then on that day every (3) months |
+| `every-year` | `elk-jaar` | the end of this year, then every year |
+| `none` | `geen` | no due date and no repetition |
+
+Next to an `every` word, one plain date sets the first time: `@1/12 @every-month` starts on 1 December and repeats on the 1st. `@every-friday` already says the day, so it takes no date.
 
 ### Periods for `vt recap`
 
@@ -222,7 +258,8 @@ cargo fmt                     # formatting
 | `todo` | parse and render one todo line |
 | `vault` | find notes, read todos, write changes |
 | `markdown` | move blocks and insert under a section, on plain lines |
-| `dates` | dates and periods, with the words per language in `dates/vocabulary` |
+| `dates` | dates, periods and repetitions you type, with the words per language in `dates/vocabulary` |
+| `recurrence` | repetition rules in the Tasks format and the next due date |
 | `project`, `git` | link a repository or worktree to its project note |
 | `links`, `output` | short link names, colors, clickable links |
 | `select`, `picker` | matching with typos, interactive lists |

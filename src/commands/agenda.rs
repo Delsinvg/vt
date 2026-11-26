@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use chrono::NaiveDate;
 
-use super::{in_notes_matching, note_title, open_todos};
+use super::{in_notes_matching, note_title, open_todos, repeat_label};
 use crate::output::Style;
 use crate::vault::VaultTodo;
 
@@ -43,9 +43,13 @@ pub fn agenda(
             ),
             Ordering::Greater => (date, " ".repeat(LABEL_WIDTH)),
         };
+        let repeats = match found.todo.recurrence.as_deref() {
+            Some(rule) => format!("  {}", repeat_label(rule, style)),
+            None => String::new(),
+        };
         writeln!(
             out,
-            "{date}  {label}  {}  {}",
+            "{date}  {label}  {}{repeats}  {}",
             style.links(&found.todo.text),
             style.dim(&format!("({})", note_title(found)))
         )?;
@@ -84,7 +88,7 @@ mod tests {
         vec![
             found(
                 "Projects/Garden/Garden.md",
-                "- [ ] Water the plants 📅 2026-11-27",
+                "- [ ] Water the plants 🔁 every 3 days 📅 2026-11-27",
             ),
             found("Inbox.md", "- [ ] Call the plumber 📅 2026-11-20"),
             found("Inbox.md", "- [ ] Buy milk"),
@@ -102,7 +106,7 @@ mod tests {
             render(&sample(), None),
             "2026-11-18  overdue  Fix the tap  (Kitchen)\n\
              2026-11-20  today    Call the plumber  (Inbox)\n\
-             2026-11-27           Water the plants  (Garden)\n"
+             2026-11-27           Water the plants  🔁 every 3 days  (Garden)\n"
         );
     }
 
@@ -110,7 +114,7 @@ mod tests {
     fn can_be_limited_to_one_project() {
         assert_eq!(
             render(&sample(), Some("garden")),
-            "2026-11-27           Water the plants  (Garden)\n"
+            "2026-11-27           Water the plants  🔁 every 3 days  (Garden)\n"
         );
     }
 

@@ -49,6 +49,10 @@ fn open_todos(todos: &[VaultTodo]) -> Vec<&VaultTodo> {
     todos.iter().filter(|found| !found.todo.done).collect()
 }
 
+fn repeat_label(rule: &str, style: Style) -> String {
+    style.dim(&format!("🔁 {rule}"))
+}
+
 fn plain(text: &str) -> String {
     Style { terminal: false }.links(text)
 }
