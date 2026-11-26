@@ -81,6 +81,7 @@ ignore = ["Templates", "Archive"]  # folders, relative to the vault, that vt ski
 week_ends_on = "friday"            # the day @thisweek and @nextweek point to
 month_ends_on = "last"             # the day @thismonth and @nextmonth point to: "last" or 1 to 31
 open_with = "zed {file}:{line}"    # how vt open opens a note; Obsidian when left out
+archive_after_days = 30            # how long a checked-off todo stays in its note before vt archive moves it
 hook_instruction = "..."           # what Claude Code does with the project note
 ```
 
@@ -148,6 +149,7 @@ The optional `repos:` list links the note to one or more git repositories. Insid
 | `vt tick [search]` | Check off a todo; without a search term you pick from a list. A repeating todo comes back with its next date |
 | `vt due [search] [@date]` | Set, change or clear (`@none`) a due date or repetition; asks for the date when you leave it out |
 | `vt move [search] [+project]` | Move a todo, with its details, into a project |
+| `vt archive` | Move todos checked off more than `archive_after_days` ago, with their details, to `<note> archive.md` next to their note |
 | `vt open [search]` | Open the note of a todo in Obsidian at its heading, or in your editor at its line (`open_with`) |
 | `vt hook` | Print the project note for a Claude Code `SessionStart` hook |
 
@@ -270,6 +272,7 @@ cargo fmt                     # formatting
 | `select`, `picker` | matching with typos, interactive lists |
 | `config` | `~/.config/vt/config.toml` |
 | `opener` | the command that opens a note: Obsidian or the `open_with` editor |
+| `archive` | which checked-off todos leave a note, and where they go in its archive |
 | `commands/*` | one file per kind of command |
 
 Tests use temporary folders and repositories with made-up notes; they never touch your own.

@@ -1,5 +1,39 @@
 const CODE_FENCE: &str = "```";
 const DEEPEST_HEADING: usize = 6;
+const TITLE_LEVEL: usize = 1;
+
+#[derive(Default)]
+pub struct Trail {
+    headings: Vec<(usize, String)>,
+    inside_code: bool,
+}
+
+impl Trail {
+    pub fn is_content(&mut self, line: &str) -> bool {
+        if is_code_fence(line) {
+            self.inside_code = !self.inside_code;
+            return false;
+        }
+        if self.inside_code {
+            return false;
+        }
+        let Some(level) = heading_level(line) else {
+            return true;
+        };
+        self.headings.retain(|(open_level, _)| *open_level < level);
+        if level > TITLE_LEVEL {
+            self.headings.push((level, line.trim_end().to_string()));
+        }
+        false
+    }
+
+    pub fn headings(&self) -> Vec<String> {
+        self.headings
+            .iter()
+            .map(|(_, heading)| heading.clone())
+            .collect()
+    }
+}
 
 pub fn heading_level(line: &str) -> Option<usize> {
     let level = line
@@ -65,6 +99,47 @@ pub fn insert_under_section(lines: &mut Vec<String>, heading: &str, block: Vec<S
         lines.splice(heading_index + 1..first_content, replacement);
     }
     true
+}
+
+pub fn insert_under_headings(lines: &mut Vec<String>, headings: &[String], block: Vec<String>) {
+    let mut start = 0;
+    let mut end = lines.len();
+    let mut level = TITLE_LEVEL;
+
+    for heading in headings {
+        let heading_index = match (start..end).find(|&index| lines[index].trim_end() == heading) {
+            Some(index) => index,
+            None => {
+                let at = after_last_content(lines, start, end);
+                let mut added = Vec::new();
+                if at > 0 {
+                    added.push(String::new());
+                }
+                added.push(heading.clone());
+                let index = at + added.len() - 1;
+                lines.splice(at..at, added);
+                index
+            }
+        };
+        level = heading_level(heading).unwrap_or(DEEPEST_HEADING);
+        start = heading_index + 1;
+        end = (start..lines.len())
+            .find(|&index| heading_level(&lines[index]).is_some_and(|other| other <= level))
+            .unwrap_or(lines.len());
+    }
+
+    let own_end = (start..end)
+        .find(|&index| heading_level(&lines[index]).is_some_and(|other| other > level))
+        .unwrap_or(end);
+    let at = after_last_content(lines, start, own_end);
+    lines.splice(at..at, block);
+}
+
+fn after_last_content(lines: &[String], start: usize, end: usize) -> usize {
+    (start..end)
+        .rev()
+        .find(|&index| !lines[index].trim().is_empty())
+        .map_or(start, |index| index + 1)
 }
 
 fn indentation_of(line: &str) -> usize {
@@ -171,6 +246,81 @@ mod tests {
             vec!["- [ ] Buy seeds".into()]
         ));
         assert_eq!(joined(&note), "# Garden\n## Links");
+    }
+
+    fn filed(note: &str, headings: &[&str], todo: &str) -> String {
+        let mut note = lines(note);
+        let headings: Vec<String> = headings.iter().map(|heading| heading.to_string()).collect();
+        insert_under_headings(&mut note, &headings, vec![todo.to_string()]);
+        joined(&note)
+    }
+
+    #[test]
+    fn files_under_the_existing_heading_after_its_last_line() {
+        assert_eq!(
+            filed(
+                "# Archive\n\n## Tasks\n- [x] Rake\n\n## Agent\n- [x] Test",
+                &["## Tasks"],
+                "- [x] Sow"
+            ),
+            "# Archive\n\n## Tasks\n- [x] Rake\n- [x] Sow\n\n## Agent\n- [x] Test"
+        );
+    }
+
+    #[test]
+    fn adds_the_missing_headings_at_the_end() {
+        assert_eq!(
+            filed("# Archive", &["## Agent", "### Branch 2"], "- [x] Test"),
+            "# Archive\n\n## Agent\n\n### Branch 2\n- [x] Test"
+        );
+    }
+
+    #[test]
+    fn files_a_subsection_inside_its_section_and_not_in_the_next_one() {
+        assert_eq!(
+            filed(
+                "# Archive\n\n## Agent\n- [x] Test\n\n## Tasks\n- [x] Rake",
+                &["## Agent", "### Branch 2"],
+                "- [x] Lint"
+            ),
+            "# Archive\n\n## Agent\n- [x] Test\n\n### Branch 2\n- [x] Lint\n\n## Tasks\n- [x] Rake"
+        );
+    }
+
+    #[test]
+    fn files_above_the_subsections_of_its_heading() {
+        assert_eq!(
+            filed(
+                "# Archive\n\n## Agent\n- [x] Test\n\n### Branch 2\n- [x] Lint",
+                &["## Agent"],
+                "- [x] Build"
+            ),
+            "# Archive\n\n## Agent\n- [x] Test\n- [x] Build\n\n### Branch 2\n- [x] Lint"
+        );
+    }
+
+    #[test]
+    fn files_a_todo_without_headings_under_the_title() {
+        assert_eq!(
+            filed(
+                "# Archive\n- [x] Milk\n\n## Tasks\n- [x] Rake",
+                &[],
+                "- [x] Bread"
+            ),
+            "# Archive\n- [x] Milk\n- [x] Bread\n\n## Tasks\n- [x] Rake"
+        );
+    }
+
+    #[test]
+    fn a_trail_follows_the_headings_and_skips_code() {
+        let mut trail = Trail::default();
+        let content: Vec<&str> = "# Garden\n## Tasks\n### Spring\n- [ ] Sow\n```\n## Not a heading\n```\n## Links\n- [ ] Read"
+            .lines()
+            .filter(|line| trail.is_content(line))
+            .collect();
+
+        assert_eq!(content, vec!["- [ ] Sow", "- [ ] Read"]);
+        assert_eq!(trail.headings(), vec!["## Links"]);
     }
 
     #[test]

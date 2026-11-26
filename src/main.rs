@@ -1,3 +1,4 @@
+mod archive;
 mod cli;
 mod commands;
 mod config;
@@ -135,6 +136,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             style,
             &mut out,
         )?,
+        Command::Archive => {
+            commands::archive(&vault, today, settings.archive_after_days, &mut out)?
+        }
         Command::Recap { period, project } => {
             let period = dates::parse_period(&period, &calendar)?;
             commands::recap(

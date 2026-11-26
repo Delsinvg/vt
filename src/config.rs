@@ -18,6 +18,7 @@ const DEFAULT_AGENT_SECTION: &str = "Agent";
 const VAULT_VARIABLE: &str = "VAULT";
 const HOME_PREFIX: &str = "~/";
 const LAST_DAY: &str = "last";
+const DEFAULT_ARCHIVE_AFTER_DAYS: u32 = 30;
 
 #[derive(Debug)]
 pub struct Layout {
@@ -34,6 +35,7 @@ pub struct Settings {
     pub week_ends_on: Weekday,
     pub month_ends_on: DayOfMonth,
     pub opener: Opener,
+    pub archive_after_days: u32,
     pub hook_instruction: Option<String>,
     pub source: PathBuf,
 }
@@ -74,6 +76,7 @@ struct ConfigFile {
     week_ends_on: Option<String>,
     month_ends_on: Option<MonthEnd>,
     open_with: Option<String>,
+    archive_after_days: Option<i64>,
     hook_instruction: Option<String>,
 }
 
@@ -161,6 +164,13 @@ fn load_from(
         })?,
         None => Opener::Obsidian,
     };
+    let archive_after_days = match file.archive_after_days {
+        Some(days) => u32::try_from(days).map_err(|_| ConfigError {
+            path: path.to_path_buf(),
+            reason: format!("archive_after_days: '{days}' is not a number of days; use 0 or more"),
+        })?,
+        None => DEFAULT_ARCHIVE_AFTER_DAYS,
+    };
     let ignored = file
         .ignore
         .unwrap_or_default()
@@ -179,6 +189,7 @@ fn load_from(
         week_ends_on,
         month_ends_on,
         opener,
+        archive_after_days,
         hook_instruction: file.hook_instruction,
         source: path.to_path_buf(),
     })
@@ -359,6 +370,24 @@ mod tests {
         assert!(error.ends_with(
             "open_with: 'zed' does not say where the note goes; add {file}, e.g. \"nvim +{line} {file}\""
         ));
+    }
+
+    #[test]
+    fn archives_after_thirty_days_unless_configured() {
+        assert_eq!(load_with(None, None).unwrap().archive_after_days, 30);
+        assert_eq!(
+            load_with(Some("archive_after_days = 7\n"), None)
+                .unwrap()
+                .archive_after_days,
+            7
+        );
+    }
+
+    #[test]
+    fn a_negative_number_of_days_to_archive_after_is_an_error() {
+        let error = load_with(Some("archive_after_days = -3\n"), None).unwrap_err();
+
+        assert!(error.ends_with("archive_after_days: '-3' is not a number of days; use 0 or more"));
     }
 
     #[test]

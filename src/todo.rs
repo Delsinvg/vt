@@ -93,12 +93,28 @@ fn split_trailing_field(text: &str) -> Option<(&str, Field<'_>)> {
     let value = text[position + marker.len()..].trim();
 
     let field = match marker {
-        RECURRENCE_MARKER if !value.is_empty() => Field::Recurrence(value),
+        RECURRENCE_MARKER if looks_like_a_rule(value) => Field::Recurrence(value),
         DUE_MARKER => Field::Due(parse_date(value)?),
         COMPLETED_MARKER => Field::Completed(parse_date(value)?),
         _ => return None,
     };
     Some((before, field))
+}
+
+/// @see https://publish.obsidian.md/tasks/Getting+Started/Recurring+Tasks
+fn looks_like_a_rule(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || " ,!".contains(character))
+}
+
+pub fn with_completion(line: &str, completed: NaiveDate) -> String {
+    format!(
+        "{} {COMPLETED_MARKER} {}",
+        line.trim_end(),
+        completed.format(DATE_FORMAT)
+    )
 }
 
 fn parse_date(value: &str) -> Option<NaiveDate> {
@@ -126,6 +142,25 @@ mod tests {
     #[test]
     fn parses_an_unchecked_todo() {
         assert_eq!(Todo::parse("- [ ] Buy milk"), Some(open_todo("Buy milk")));
+    }
+
+    #[test]
+    fn a_marker_inside_the_text_is_not_a_rule() {
+        let line = "- [ ] Show `🔁` in the list (with details)";
+
+        let todo = Todo::parse(line).unwrap();
+
+        assert_eq!(todo.recurrence, None);
+        assert_eq!(todo.text, "Show `🔁` in the list (with details)");
+        assert_eq!(todo.render(), line);
+    }
+
+    #[test]
+    fn adds_the_completion_date_and_leaves_the_rest_of_the_line_alone() {
+        assert_eq!(
+            with_completion("- [x] Buy  milk 📅 2026-11-20 ", date(2026, 11, 26)),
+            "- [x] Buy  milk 📅 2026-11-20 ✅ 2026-11-26"
+        );
     }
 
     #[test]

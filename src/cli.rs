@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
     version,
     arg_required_else_help = true,
     about = "Todos in your Markdown notes, from the terminal",
-    after_help = "Configuration (~/.config/vt/config.toml, every setting optional):\n  vault = \"~/Documents/notes\"   where your notes are; the VAULT variable wins over this\n  inbox = \"Inbox.md\"           the note new todos go to\n  section = \"Todo\"             the '## ' section that projects collect todos in\n  agent_section = \"Agent\"      the '## ' section for an AI agent's own todos\n  ignore = [\"Templates\"]       folders, relative to the vault, that vt skips\n  week_ends_on = \"friday\"      the day @thisweek and @nextweek point to\n  month_ends_on = \"last\"       the day @thismonth, @nextmonth and @every-month point to\n  open_with = \"zed {file}:{line}\"  how vt open opens a note; Obsidian without it\n  hook_instruction = \"...\"     what Claude Code does with the project note (vt hook)"
+    after_help = "Configuration (~/.config/vt/config.toml, every setting optional):\n  vault = \"~/Documents/notes\"   where your notes are; the VAULT variable wins over this\n  inbox = \"Inbox.md\"           the note new todos go to\n  section = \"Todo\"             the '## ' section that projects collect todos in\n  agent_section = \"Agent\"      the '## ' section for an AI agent's own todos\n  ignore = [\"Templates\"]       folders, relative to the vault, that vt skips\n  week_ends_on = \"friday\"      the day @thisweek and @nextweek point to\n  month_ends_on = \"last\"       the day @thismonth, @nextmonth and @every-month point to\n  open_with = \"zed {file}:{line}\"  how vt open opens a note; Obsidian without it\n  archive_after_days = 30      how long a checked-off todo stays in its note (vt archive)\n  hook_instruction = \"...\"     what Claude Code does with the project note (vt hook)"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -128,6 +128,12 @@ pub enum Command {
         )]
         words: Vec<String>,
     },
+
+    #[command(
+        about = "Move checked-off todos, after archive_after_days, into an archive next to their note",
+        after_help = "A todo checked off more than archive_after_days (30) ago moves, with its details, to '<note> archive.md' in the same folder, under the same headings. A checked-off todo without a ✅ date gets today's date first, so it moves later.\n\nExample:\n  vt archive"
+    )]
+    Archive,
 
     #[command(
         about = "Print the project note for a Claude Code SessionStart hook",

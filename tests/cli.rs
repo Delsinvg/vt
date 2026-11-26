@@ -221,6 +221,28 @@ fn a_configured_editor_opens_the_note_at_the_line_of_the_todo() {
 }
 
 #[test]
+fn old_checked_off_todos_move_to_an_archive_next_to_their_note() {
+    let sandbox = Sandbox::new();
+    sandbox.note(
+        "Garden.md",
+        "# Garden\n## Todo\n- [ ] Rake the leaves\n- [x] Buy seeds ✅ 2000-01-01\n",
+    );
+
+    assert_eq!(
+        sandbox.vt(&["archive"]),
+        "Archived 1 checked-off todo from Garden into Garden archive\n"
+    );
+    assert_eq!(
+        sandbox.read("Garden.md"),
+        "# Garden\n## Todo\n- [ ] Rake the leaves\n"
+    );
+    assert_eq!(
+        sandbox.read("Garden archive.md"),
+        "# Garden archive\n\n## Todo\n- [x] Buy seeds ✅ 2000-01-01\n"
+    );
+}
+
+#[test]
 fn the_agent_keeps_its_own_todos_apart() {
     let sandbox = Sandbox::new();
     sandbox.note(

@@ -2,8 +2,10 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use chrono::NaiveDate;
 use walkdir::{DirEntry, WalkDir};
 
+use crate::archive;
 use crate::markdown;
 use crate::project::{Project, repos_in};
 use crate::todo::Todo;
@@ -20,6 +22,14 @@ pub struct VaultTodo {
     pub line: usize,
     pub headings: Vec<String>,
     pub todo: Todo,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Archived {
+    pub note: PathBuf,
+    pub archive: PathBuf,
+    pub filed: usize,
+    pub dated: usize,
 }
 
 pub struct Vault {
@@ -132,6 +142,9 @@ impl Vault {
     pub fn notes_with_section(&self, heading: &str) -> io::Result<Vec<PathBuf>> {
         let mut found = Vec::new();
         for note in self.notes()? {
+            if archive::is_archive(&note) {
+                continue;
+            }
             if markdown::has_section(&fs::read_to_string(self.root.join(&note))?, heading) {
                 found.push(note);
             }
@@ -180,6 +193,46 @@ impl Vault {
 
         self.write_lines(destination, &target)?;
         self.write_lines(&found.note, &source)
+    }
+
+    pub fn archive_done(
+        &self,
+        today: NaiveDate,
+        done_before: NaiveDate,
+    ) -> io::Result<Vec<Archived>> {
+        let mut archived = Vec::new();
+
+        for note in self.notes()? {
+            if archive::is_archive(&note) {
+                continue;
+            }
+            let sorted = archive::sort_out(&self.lines_of(&note)?, today, done_before);
+            if sorted.filed.is_empty() && sorted.dated == 0 {
+                continue;
+            }
+
+            let archive = archive::archive_of(&note);
+            let filed = sorted.filed.len();
+            if filed > 0 {
+                let existing = match self.lines_of(&archive) {
+                    Ok(lines) => lines,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        vec![archive::title_for(&note)]
+                    }
+                    Err(error) => return Err(error),
+                };
+                self.write_lines(&archive, &archive::file_into(existing, sorted.filed))?;
+            }
+            self.write_lines(&note, &sorted.kept)?;
+
+            archived.push(Archived {
+                note,
+                archive,
+                filed,
+                dated: sorted.dated,
+            });
+        }
+        Ok(archived)
     }
 
     fn lines_of(&self, note: &Path) -> io::Result<Vec<String>> {
@@ -235,33 +288,18 @@ fn reopened(line: &str) -> String {
 }
 
 fn todos_in(note: &Path, content: &str) -> Vec<VaultTodo> {
+    let mut trail = markdown::Trail::default();
     let mut todos = Vec::new();
-    let mut headings: Vec<(usize, String)> = Vec::new();
-    let mut inside_code = false;
 
     for (index, line) in content.lines().enumerate() {
-        if markdown::is_code_fence(line) {
-            inside_code = !inside_code;
-            continue;
-        }
-        if inside_code {
-            continue;
-        }
-        if let Some(level) = markdown::heading_level(line) {
-            headings.retain(|(open_level, _)| *open_level < level);
-            if level > 1 {
-                headings.push((level, line.trim_end().to_string()));
-            }
+        if !trail.is_content(line) {
             continue;
         }
         if let Some(todo) = Todo::parse(line) {
             todos.push(VaultTodo {
                 note: note.to_path_buf(),
                 line: index + 1,
-                headings: headings
-                    .iter()
-                    .map(|(_, heading)| heading.clone())
-                    .collect(),
+                headings: trail.headings(),
                 todo,
             });
         }
@@ -544,6 +582,84 @@ mod tests {
                 .unwrap(),
             vec![PathBuf::from("Garden.md")]
         );
+    }
+
+    #[test]
+    fn an_archive_is_never_a_project_to_move_todos_into() {
+        let directory = vault_with(&[
+            ("Garden.md", "# Garden\n## Tasks\n"),
+            ("Garden archive.md", "# Garden archive\n## Tasks\n"),
+        ]);
+
+        assert_eq!(
+            Vault::new(directory.path())
+                .notes_with_section(TASKS)
+                .unwrap(),
+            vec![PathBuf::from("Garden.md")]
+        );
+    }
+
+    fn day(text: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+    }
+
+    #[test]
+    fn archives_old_todos_into_an_archive_next_to_their_note() {
+        let directory = vault_with(&[
+            (
+                "Garden/Garden.md",
+                "# Garden\n## Tasks\n- [ ] Rake\n- [x] Sow ✅ 2026-10-01\n- [x] Dig\n",
+            ),
+            (
+                "Garden/Garden archive.md",
+                "# Garden archive\n\n## Tasks\n- [x] Mow ✅ 2026-09-01\n",
+            ),
+            ("Inbox.md", "- [ ] Buy milk\n"),
+        ]);
+        let vault = Vault::new(directory.path());
+
+        let archived = vault
+            .archive_done(day("2026-11-26"), day("2026-10-27"))
+            .unwrap();
+
+        assert_eq!(
+            archived,
+            vec![Archived {
+                note: PathBuf::from("Garden/Garden.md"),
+                archive: PathBuf::from("Garden/Garden archive.md"),
+                filed: 1,
+                dated: 1,
+            }]
+        );
+        assert_eq!(
+            read(&directory, "Garden/Garden.md"),
+            "# Garden\n## Tasks\n- [ ] Rake\n- [x] Dig ✅ 2026-11-26\n"
+        );
+        assert_eq!(
+            read(&directory, "Garden/Garden archive.md"),
+            "# Garden archive\n\n## Tasks\n- [x] Mow ✅ 2026-09-01\n- [x] Sow ✅ 2026-10-01\n"
+        );
+        assert_eq!(read(&directory, "Inbox.md"), "- [ ] Buy milk\n");
+    }
+
+    #[test]
+    fn starts_an_archive_with_a_title_and_never_archives_an_archive() {
+        let directory = vault_with(&[
+            ("Inbox.md", "- [x] Buy milk ✅ 2026-10-01\n"),
+            ("Old archive.md", "- [x] Buy bread\n"),
+        ]);
+        let vault = Vault::new(directory.path());
+
+        vault
+            .archive_done(day("2026-11-26"), day("2026-10-27"))
+            .unwrap();
+
+        assert_eq!(read(&directory, "Inbox.md"), "\n");
+        assert_eq!(
+            read(&directory, "Inbox archive.md"),
+            "# Inbox archive\n- [x] Buy milk ✅ 2026-10-01\n"
+        );
+        assert_eq!(read(&directory, "Old archive.md"), "- [x] Buy bread\n");
     }
 
     #[test]
