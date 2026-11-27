@@ -231,6 +231,7 @@ Dates start with `@` and work in English and Dutch. Capitals, dashes and spaces 
 | `every-week`, `every-2-weeks` | `elke-week`, `elke-2-weken` | the end of this week, then every (2) weeks |
 | `every-month`, `every-3-months` | `elke-maand`, `elke-3-maanden` | the end of this month, then on that day every (3) months |
 | `every-year` | `elk-jaar` | the end of this year, then every year |
+| `daily`, `weekly`, `monthly`, `yearly` | `dagelijks`, `wekelijks`, `maandelijks`, `jaarlijks` | the same as `every-day`, `every-week`, `every-month`, `every-year` |
 | `none` | `geen` | no due date and no repetition |
 
 Next to an `every` word, one plain date sets the first time: `@1/12 @every-month` starts on 1 December and repeats on the 1st. `@every-friday` already says the day, so it takes no date.

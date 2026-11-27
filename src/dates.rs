@@ -519,6 +519,26 @@ mod tests {
     }
 
     #[test]
+    fn daily_weekly_monthly_and_yearly_mean_every_day_week_month_and_year() {
+        for (shorthand, spelled_out) in [
+            ("daily", "every-day"),
+            ("weekly", "every-week"),
+            ("monthly", "every-month"),
+            ("yearly", "every-year"),
+            ("dagelijks", "elke-dag"),
+            ("wekelijks", "elke-week"),
+            ("maandelijks", "elke-maand"),
+            ("jaarlijks", "elk-jaar"),
+        ] {
+            assert_eq!(
+                schedule_on_friday(&[shorthand]),
+                schedule_on_friday(&[spelled_out]),
+                "{shorthand}"
+            );
+        }
+    }
+
+    #[test]
     fn every_year_starts_at_the_end_of_this_year() {
         assert_eq!(
             schedule_on_friday(&["elk-jaar"]),

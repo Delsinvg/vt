@@ -31,6 +31,7 @@ struct Vocabulary {
     weekdays: [&'static str; 7],
     every: &'static [&'static str],
     units: [(&'static str, &'static str); 4],
+    every_single_unit: [&'static str; 4],
 }
 
 const ENGLISH: Vocabulary = Vocabulary {
@@ -63,6 +64,7 @@ const ENGLISH: Vocabulary = Vocabulary {
         ("month", "months"),
         ("year", "years"),
     ],
+    every_single_unit: ["daily", "weekly", "monthly", "yearly"],
 };
 
 const DUTCH: Vocabulary = Vocabulary {
@@ -95,6 +97,7 @@ const DUTCH: Vocabulary = Vocabulary {
         ("maand", "maanden"),
         ("jaar", "jaren"),
     ],
+    every_single_unit: ["dagelijks", "wekelijks", "maandelijks", "jaarlijks"],
 };
 
 const LANGUAGES: [Vocabulary; 2] = [ENGLISH, DUTCH];
@@ -147,6 +150,9 @@ impl Vocabulary {
     }
 
     fn every(&self, word: &str) -> Option<Every> {
+        if let Some(position) = self.every_single_unit.iter().position(|unit| *unit == word) {
+            return Some(Every::Unit(1, UNITS[position]));
+        }
         self.every
             .iter()
             .filter_map(|every| word.strip_prefix(every))
